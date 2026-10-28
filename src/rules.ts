@@ -85,26 +85,38 @@ export function entriesOf(rules: Rule[], deviceId: string): { dated: Entry[]; we
   const weekly: string[] = [];
   let skipped = 0;
   for (const rule of rules) {
-    for (const a of rule.actions) {
-      const sp = a.every.specific as unknown as {
-        year?: number;
-        month?: number;
-        day?: number;
-        daysOfWeek?: string[];
-        reference: string;
-        offset?: { value: { integer: number } };
-      };
-      if (sp.reference !== 'Sunset') {
+    // Real accounts hold other shapes (top-level "if" or "command" actions, every.interval, missing fields).
+    // Anything that is not a Sunset-relative timed command on this device is skipped, never an error.
+    const rawActions: unknown = (rule as { actions?: unknown }).actions;
+    for (const a of Array.isArray(rawActions) ? (rawActions as unknown[]) : []) {
+      const every = (a as { every?: { specific?: unknown; actions?: unknown } } | null)?.every;
+      const sp = every?.specific as
+        | {
+            year?: number;
+            month?: number;
+            day?: number;
+            daysOfWeek?: string[];
+            reference?: string;
+            offset?: { value?: { integer?: number }; unit?: string };
+          }
+        | undefined;
+      if (!sp || typeof sp !== 'object' || sp.reference !== 'Sunset' || !Array.isArray(every?.actions)) {
         skipped++;
         continue;
       }
-      for (const act of a.every.actions) {
-        const cmd = act.command.commands.find((c) => c.capability === CAPABILITY);
-        if (!cmd || !act.command.devices.includes(deviceId)) {
+      const unit = sp.offset?.unit ?? 'Minute';
+      const raw = sp.offset?.value?.integer ?? 0;
+      const offset = unit === 'Hour' ? raw * 60 : unit === 'Minute' ? raw : Number.NaN;
+      if (Number.isNaN(offset)) {
+        skipped++;
+        continue;
+      }
+      for (const act of every.actions as Array<{ command?: { devices?: string[]; commands?: Array<{ capability?: string; command?: string }> } }>) {
+        const cmd = act?.command?.commands?.find((c) => c.capability === CAPABILITY);
+        if (!cmd || (cmd.command !== 'on' && cmd.command !== 'off') || !act.command?.devices?.includes(deviceId)) {
           skipped++;
           continue;
         }
-        const offset = sp.offset?.value.integer ?? 0;
         if (sp.year && sp.month && sp.day) {
           const date = `${sp.year}-${String(sp.month).padStart(2, '0')}-${String(sp.day).padStart(2, '0')}`;
           dated.push({ date, offset, command: cmd.command });

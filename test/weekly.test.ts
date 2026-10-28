@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeBlocks, type Place } from '../src/blocks.js';
-import { MANAGED_NAME, planInstall, type ExistingRule } from '../src/install.js';
+import { MANAGED_NAME, planInstall, rulesAfterPlan, type ExistingRule } from '../src/install.js';
 import { entriesOf, holidayOnlyActions, lateWeeklyOffs, rulesByYear, weeklyRule, WEEKLY_RULE_NAME, type Rule } from '../src/rules.js';
 
 const D = 'DEV';
@@ -64,13 +64,46 @@ describe('planInstall with the weekly rule', () => {
   });
 });
 
-describe('lateWeeklyOffs (the user already has their own weekly OFF)', () => {
-  const own = (offset: number): Rule => ({ ...weeklyRule({ deviceId: D, exitMinutesAfterSunset: 90 }), name: 'Weekday Mode', actions: [{ ...weeklyRule({ deviceId: D, exitMinutesAfterSunset: 90 }).actions[1]! }] }) as Rule & { name: string };
-  it('flags a Saturday OFF at or after +100, ignores +90', () => {
-    const late = weeklyRule({ deviceId: D, exitMinutesAfterSunset: 95, reenterMinutesAfterSunset: 200 });
-    const adj = JSON.parse(JSON.stringify(late.actions[1])) as Rule['actions'][number];
-    (adj.every.specific.offset.value as { integer: number }).integer = 120;
-    expect(lateWeeklyOffs([{ name: 'o', actions: [adj] }], D, 100)).toEqual(['Sat off +120']);
-    expect(lateWeeklyOffs([own(90)], D, 100)).toEqual([]);
+describe('lateWeeklyOffs and unusual rules', () => {
+  const satOff = (offset: number, unit: 'Minute' | 'Hour' = 'Minute', device = D): Rule => {
+    const r = weeklyRule({ deviceId: device, exitMinutesAfterSunset: 1 });
+    const act = JSON.parse(JSON.stringify(r.actions[1])) as Rule['actions'][number];
+    (act.every.specific.offset as { unit: string }).unit = unit;
+    act.every.specific.offset.value.integer = offset;
+    return { name: 'own', actions: [act] };
+  };
+  it('flags a Saturday OFF after the re-ON and at exactly the re-ON, not before', () => {
+    expect(lateWeeklyOffs([satOff(120)], D, 100)).toEqual(['Sat off +120']);
+    expect(lateWeeklyOffs([satOff(100)], D, 100)).toEqual(['Sat off +100']);
+    expect(lateWeeklyOffs([satOff(90)], D, 100)).toEqual([]);
+  });
+  it('honors the offset unit (2 Hours = +120 minutes) and ignores other devices', () => {
+    expect(lateWeeklyOffs([satOff(2, 'Hour')], D, 100)).toEqual(['Sat off +120']);
+    expect(lateWeeklyOffs([satOff(1, 'Hour')], D, 100)).toEqual([]);
+    expect(lateWeeklyOffs([satOff(120, 'Minute', 'OTHER')], D, 100)).toEqual([]);
+  });
+  it('skips ordinary rules of other shapes instead of throwing (top-level if/command, every.interval, empty)', () => {
+    const odd = [
+      { name: 'if rule', actions: [{ if: { equals: { left: { device: { devices: ['x'], component: 'main', capability: 'switch', attribute: 'switch' } }, right: { string: 'on' } }, then: [{ command: { devices: ['x'], commands: [{ component: 'main', capability: 'switch', command: 'on' }] } }] } }] },
+      { name: 'top command', actions: [{ command: { devices: [D], commands: [{ component: 'main', capability: 'samsungce.sabbathMode', command: 'off' }] } }] },
+      { name: 'interval', actions: [{ every: { interval: { value: 5, unit: 'Minute' }, actions: [{ command: { devices: [D], commands: [] } }] } }] },
+      { name: 'empty', actions: [] },
+      { name: 'none' },
+    ] as unknown as Rule[];
+    expect(() => lateWeeklyOffs(odd, D, 100)).not.toThrow();
+    expect(lateWeeklyOffs(odd, D, 100)).toEqual([]);
+    expect(entriesOf(odd, D).skipped).toBeGreaterThan(0);
+    expect(() => planInstall(odd.map((r, i) => ({ ...r, id: `o${i}` })), [weeklyRule({ deviceId: D })])).not.toThrow();
+  });
+  it('rulesAfterPlan: warning covers a retained managed weekly rule, a removed rule disappears, an update replaces', () => {
+    const lateManaged: ExistingRule = { ...satOff(130), name: 'shabbat-fridge weekly', id: 'w' };
+    const plan = planInstall([lateManaged], [], false);
+    expect(lateWeeklyOffs(rulesAfterPlan([lateManaged], plan), D, 100)).toEqual(['Sat off +130']);
+    const plan2 = planInstall([lateManaged], [weeklyRule({ deviceId: D })]);
+    expect(plan2.update.length).toBe(1);
+    expect(lateWeeklyOffs(rulesAfterPlan([lateManaged], plan2), D, 100)).toEqual([]);
+    const old: ExistingRule = { ...satOff(130), name: 'shabbat-fridge holidays 2020', id: 'h' };
+    const plan3 = planInstall([old], [], true);
+    expect(lateWeeklyOffs(rulesAfterPlan([old], plan3), D, 100)).toEqual([]);
   });
 });

@@ -68,3 +68,11 @@ export function resolveIsrael(choice: string | undefined, countryCode: string | 
   }
   throw new Error(`calendar must be auto, israel or diaspora (got "${choice}")`);
 }
+
+/** The account's rules as they will be after the plan is applied: removed rules gone, updated rules replaced. */
+export function rulesAfterPlan(existing: ExistingRule[], plan: Plan): Rule[] {
+  const removed = new Set(plan.remove.map((r) => r.id));
+  const updated = new Map(plan.update.map((u) => [u.id, u.rule]));
+  const out: Rule[] = existing.filter((e) => !removed.has(e.id)).map((e) => updated.get(e.id) ?? e);
+  return [...out, ...plan.create];
+}
