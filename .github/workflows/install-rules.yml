@@ -60,4 +60,4 @@ jobs:
           CALENDAR: ${{ inputs.calendar }}
           WEEKLY_RULES: ${{ inputs.weekly_rules }}
           PRUNE: ${{ inputs.prune }}
-        run: npx tsx scripts/install.ts
+        run: npx --no-install tsx scripts/install.ts

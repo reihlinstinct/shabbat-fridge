@@ -60,7 +60,7 @@ jobs:
         run: |
           mkdir -p out
           export START="$(date -u +%F)"
-          OUT=out/holiday-rules.json SCHEDULE_MD=out/holiday-schedule.md npx tsx scripts/generate.ts
+          OUT=out/holiday-rules.json SCHEDULE_MD=out/holiday-schedule.md npx --no-install tsx scripts/generate.ts
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: holiday-rules

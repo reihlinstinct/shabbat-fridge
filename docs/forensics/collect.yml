@@ -9,23 +9,37 @@ permissions:
 concurrency:
   group: collect
   cancel-in-progress: false
+env:
+  TOOL_REPO: reihlinstinct/shabbat-fridge
+  TOOL_REF: REPLACE_WITH_REVIEWED_COMMIT_SHA   # a 40-character commit SHA of the collector you reviewed; the run fails until you set it
+  LOGS_REPO: reihlinstinct/shabbat-fridge-logs
 jobs:
   collect:
+    if: github.repository == 'reihlinstinct/shabbat-fridge-logs'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Fail closed unless this repository is the PRIVATE logs repository and the tool ref is pinned
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          [ "$GITHUB_REPOSITORY" = "$LOGS_REPO" ] || { echo "wrong repository"; exit 1; }
+          priv=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GITHUB_REPOSITORY" | jq -r .private)
+          [ "$priv" = "true" ] || { echo "repository is not private; refusing to collect"; exit 1; }
+          echo "$TOOL_REF" | grep -Eq '^[0-9a-f]{40}$' || { echo "TOOL_REF must be a 40-character commit SHA"; exit 1; }
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           path: logs
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           repository: reihlinstinct/shabbat-fridge
-          ref: main   # pin to a commit SHA once you have reviewed the collector
+          ref: ${{ env.TOOL_REF }}
           path: tool
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
-      - run: npm ci
+      - run: npm ci --ignore-scripts
         working-directory: tool
       - name: Read-only snapshot into the private repo
         working-directory: tool
@@ -33,13 +47,13 @@ jobs:
           ST_TOKEN: ${{ secrets.SMARTTHINGS_TOKEN }}
           OUT_DIR: ${{ github.workspace }}/logs/data
           RETAIN_DAYS: '365'
-        run: npx tsx scripts/collect.ts
+        run: npx --no-install tsx scripts/collect.ts
       - name: Analyze and keep the report in the private repo
         working-directory: tool
         env:
           SNAP_DIR: ${{ github.workspace }}/logs/data
         run: |
-          npx tsx scripts/analyze.ts | tee "$GITHUB_WORKSPACE/logs/data/report.txt" >> "$GITHUB_STEP_SUMMARY"
+          npx --no-install tsx scripts/analyze.ts | tee "$GITHUB_WORKSPACE/logs/data/report.txt" >> "$GITHUB_STEP_SUMMARY"
       - name: Commit
         working-directory: logs
         run: |

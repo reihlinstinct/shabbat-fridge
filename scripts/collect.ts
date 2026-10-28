@@ -5,16 +5,17 @@
  * Writes: snapshots/YYYY-MM/<time>.json (status, rules summary, place) and events/YYYY-MM.ndjson (deduplicated history).
  * Only GET requests are made. The token is never printed or written.
  */
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SmartThings, sabbathDevices } from '../src/smartthings.js';
+import { isExpired, isMonthExpired, newEventLines, parseRetainDays } from '../src/collect.js';
 
 const env = (k: string, d = ''): string => process.env[k] ?? d;
 const token = env('ST_TOKEN');
 if (!token) throw new Error('missing ST_TOKEN');
 const out = env('OUT_DIR');
 if (!out) throw new Error('missing OUT_DIR (a private directory)');
-const retainDays = Number(env('RETAIN_DAYS', '365'));
+const retainDays = parseRetainDays(env('RETAIN_DAYS', '365'));
 
 const st = new SmartThings(token);
 const locs = await st.locations();
@@ -46,25 +47,39 @@ writeFileSync(join(out, 'snapshots', month, `${takenAt.replace(/[:.]/g, '-')}.js
 
 // History beyond SmartThings' ~7 days: append events not seen before.
 mkdirSync(join(out, 'events'), { recursive: true });
+const seenByMonth = new Map<string, Set<string>>();
+const seenIn = (month: string): Set<string> => {
+  let set = seenByMonth.get(month);
+  if (!set) {
+    set = new Set<string>();
+    const file = join(out, 'events', `${month}.ndjson`);
+    if (existsSync(file)) for (const l of readFileSync(file, 'utf8').split('\n')) if (l) set.add((JSON.parse(l) as { k: string }).k);
+    seenByMonth.set(month, set);
+  }
+  return set;
+};
 let added = 0;
-for (const e of await st.deviceHistory(locationId, deviceId)) {
-  const m = String(e.time).slice(0, 7);
-  const file = join(out, 'events', `${m}.ndjson`);
-  const key = `${e.epoch ?? e.time}:${e.hash ?? ''}`;
-  const have = existsSync(file) ? readFileSync(file, 'utf8') : '';
-  if (have.includes(`"k":"${key}"`)) continue;
-  appendFileSync(file, JSON.stringify({ k: key, time: e.time, capability: e.capability, attribute: e.attribute, value: e.value }) + '\n');
+const events = await st.deviceHistory(locationId, deviceId);
+const months = new Set(events.map((e) => String(e.time).slice(0, 7)));
+const all = new Set<string>();
+for (const m of months) for (const k of seenIn(m)) all.add(k);
+for (const { month, line } of newEventLines(all, events)) {
+  appendFileSync(join(out, 'events', `${month}.ndjson`), line + '\n');
   added++;
 }
 
-// Retention: delete snapshot files older than RETAIN_DAYS.
-const cutoff = Date.now() - retainDays * 86400000;
+// Retention (working tree only; Git history keeps deleted files, see docs/FORENSICS.md).
+const now = Date.now();
 let removed = 0;
 const dir = join(out, 'snapshots');
 for (const m of existsSync(dir) ? readdirSync(dir) : []) {
   for (const f of readdirSync(join(dir, m))) {
     const p = join(dir, m, f);
-    if (statSync(p).mtimeMs < cutoff) { rmSync(p); removed++; }
+    const takenAt = (JSON.parse(readFileSync(p, 'utf8')) as { takenAt?: string }).takenAt ?? '';
+    if (isExpired(takenAt, now, retainDays)) { rmSync(p); removed++; }
   }
 }
-console.log(`Snapshot saved. Sabbath mode: ${snapshot.sabbath ? snapshot.sabbath.value : 'unknown'}. New history events: ${added}. Old snapshots removed: ${removed}.`);
+for (const f of readdirSync(join(out, 'events'))) {
+  if (/^\d{4}-\d{2}\.ndjson$/.test(f) && isMonthExpired(f.slice(0, 7), now, retainDays)) { rmSync(join(out, 'events', f)); removed++; }
+}
+console.log(`Snapshot saved. Sabbath mode: ${snapshot.sabbath ? snapshot.sabbath.value : 'unknown'}. New history events: ${added}. Old files removed: ${removed}.`);
