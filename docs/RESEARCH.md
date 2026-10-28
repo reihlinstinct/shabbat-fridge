@@ -52,6 +52,35 @@ All links were read on 2026-10-28. "Community" means forum posts, not official g
   https://community.smartthings.com/t/ep-smartapp-replacement-for-shabbat-and-holiday-modes/255274
 - Rate limits page (no Rules guardrails found): https://developer.smartthings.com/docs/getting-started/rate-limits
 
+## History, auto-exit, renewal hosting (checked 2026-10-28)
+
+- SmartThings device history API (`/v1/history/devices`) returned door contact events only for this fridge,
+  about 7 days back. Sabbath mode status changes were not in it.
+- Samsung US support: "Sabbath mode stays active for 85 hours once it's enabled, even if there is a power outage"
+  (model-dependent): https://www.samsung.com/us/support/answer/ANS10006799/
+- GitHub Actions: scheduled events can be delayed at high load, `schedule` runs only from the default branch,
+  and a cron can stop if its actor account is suspended or deleted:
+  https://docs.github.com/en/actions/how-tos/troubleshoot-workflows
+- Secrets are encrypted with libsodium sealed boxes and can be written through the REST API:
+  https://docs.github.com/en/actions/concepts/security/secrets
+- The 60-day inactivity rule for public repos comes from a third-party article, not the GitHub pages above:
+  https://latchkey.dev/learn/github-actions/github-actions-schedule-disabled-60-days-inactivity
+
+## Free third-party options (checked 2026-10-28)
+
+- SmartThings CLI: browser login with Samsung account, or a PAT (24h); rules commands:
+  https://developer.smartthings.com/docs/sdks/cli and https://github.com/SmartThingsCommunity/smartthings-cli/blob/main/README.md
+  (example `smartthings rules:create -j -i file.json`: https://community.smartthings.com/t/how-to-write-api-rule/280637)
+- Home Assistant Jewish Calendar (Diaspora flag, `issur_melacha_in_effect`, candle lighting and havdalah sensors):
+  https://www.home-assistant.io/integrations/jewish_calendar
+- SmartThings and Home Assistant OAuth integration (no PAT): https://community.smartthings.com/t/new-integration-between-home-assistant-and-smartthings/296251
+- Home Assistant switch for `samsungce.sabbathMode` (commit in HA core, in the earlier search result):
+  https://git.2ari.ca/arian/home-assistant-core/commit/923300f4e7733a18100965407de1d7e96bf46381.diff
+- IFTTT free plan: https://help.ifttt.com/hc/en-us/articles/360052714673-Billing-FAQ and https://ifttt.com/plans
+- Make SmartThings app (PAT or OAuth credentials): https://apps.make.com/smartthings
+- Hubitat community driver for Samsung appliances via the SmartThings cloud:
+  https://community.hubitat.com/t/drivers-for-samsung-appliances-controlled-via-smartthings-cloud-api/94807
+
 ## Jewish calendar and sunset
 
 - `@hebcal/core` computes holidays (Israel flag `il`) and zmanim offline for any latitude, longitude, time zone.

@@ -139,6 +139,72 @@ measure by installing a test rule. Group actions into one rule per quarter until
 ### D. SmartApp (webhook) or Edge driver
 Edge drivers need a Hub; webhook SmartApp is C plus subscriptions. Not needed.
 
+## 4b. Authentication and where the renewal job runs
+
+The 24 hour token problem. A personal access token expires after 24 hours, so it cannot be the long-term key.
+- Install-once (B1) needs no long-term key at all: a 24 hour token with Rules write installs the whole horizon and
+  can then expire. The installed Rules keep running on Samsung's servers.
+- Automatic extension needs an OAuth app (OAuth-In, API-only) authorized once by the user with his Samsung
+  login, which yields a refresh token. Refresh tokens are single-use: each refresh returns a new pair that must
+  be stored before use. A weekly refresh keeps the chain alive. Lifetime of an unused refresh token is not stated
+  in the official token-management page (**UNVERIFIED**).
+
+Where the weekly renewal job runs, GitHub Actions vs Cloudflare Workers (both free):
+
+| | GitHub Actions (public repo) | Cloudflare Workers + KV |
+| --- | --- | --- |
+| Cost | Free, public repos have no minute charge | Free tier, needs a Cloudflare account |
+| Fit for a weekly job | Good. Cron can be delayed by minutes at busy times (GitHub says so), irrelevant for weekly | Good, precise |
+| Token write-back | Repository secret updated through the REST API with a fine-grained PAT (secrets write, this repo only), or an encrypted file committed to the repo | KV write, no extra credential |
+| Concurrency | `concurrency:` group so two runs never rotate the token twice | Single cron, KV write per key |
+| Silent failure modes | Schedule can stop if the actor account is suspended or deleted; third-party reports that public-repo schedules are disabled after 60 days without repo activity (the GitHub docs pages we read did not state it, verify); needs a keep-alive | Free-plan limits (100,000 requests/day) are far above need |
+| Already in use by the user | Yes (his other projects run on Actions) | New account to set up |
+| Public exposure | Code public, secrets private. No private data in the repo | Same |
+
+Recommendation: GitHub Actions. A delayed or missed weekly run costs nothing under B1 because Samsung executes
+the Rules already installed, and the user already prefers Actions. Mitigations to build: a `concurrency` group;
+write the new refresh token to the secret before using the new access token; a final step that opens an issue if
+a run fails or the installed horizon drops under 12 months; a keep-alive so the schedule is never idle for 60 days.
+Cloudflare stays the fallback if Actions scheduling proves unreliable.
+
+## 4c. Installing without our own token (his import path)
+
+The user previously uploaded a JSON of holiday dates himself. The SmartThings CLI does the same job and does not
+need a personal access token: its default login opens a browser, the user signs in with his Samsung account and
+grants the CLI access (official CLI docs). Rule JSON goes in with `smartthings rules:create -i file.json`
+(also `rules`, `rules:update`, `rules:delete`). So the generated JSON can be handed to him as a file and
+imported by him, with no secret passing through us. The same JSON shape is what the dry run diffs.
+
+Confirmed against his report: the weekly Saturday OFF is the bug. Under this design there is no weekly OFF.
+Each merged block gets one ON (eve of first day) and one OFF (last day), so a Saturday followed by a holiday
+(Sat+Sun Rosh Hashana, Shabbat then Yom Tov) has no Motzaei Shabbat OFF.
+
+## 4d. Free third-party services, honestly
+
+Checked 2026-10-28. None of these is Samsung-hosted. Anything below that connects to his SmartThings account holds
+a token that can control his devices (all his Samsung devices, unless the scope is narrowed), so each is a trust
+decision.
+
+| Service | Free? | Hebrew calendar, Yom Tov, merging | SmartThings sabbathMode | Token handling and risk |
+| --- | --- | --- | --- | --- |
+| Home Assistant (self-hosted) | Software free; needs an always-on machine (he has a Linux/podman box) | Built-in Jewish Calendar integration: Israel or Diaspora flag, configurable candle-lighting and havdalah offsets, and a binary sensor `issur_melacha_in_effect` that is on for Shabbat and Yom Tov (adjacent days merge) | Official SmartThings integration with OAuth (no PAT, no manual refresh) exposes `samsungce.sabbathMode` as a switch (HA added it) | Credentials stay on his own machine. Cost: he runs and updates an HA instance; it fails if the machine is off. Setup of the OAuth link for a purely self-hosted install is **UNVERIFIED** (the easy path uses Nabu Casa, which is paid) |
+| Home Assistant Cloud (Nabu Casa) | Paid | Same | Same | Not free |
+| IFTTT | Free: 2 applets, 1 trigger + 1 action each, 1,000 credits/month | Only through a Hebcal Google Calendar feed (community recipe); no merging logic, event times only | SmartThings service exposes switches and standard actions; the fridge's Samsung-specific `sabbathMode` is not known to be available (**UNVERIFIED**, likely a virtual-switch workaround) | Gives IFTTT a SmartThings token |
+| Make (Integromat) | Free tier exists | Needs HTTP calls to Hebcal plus our own merge logic | SmartThings module needs a PAT (24 hours) or OAuth credentials | PAT expiry problem again; third party holds a token |
+| Zapier, Homey, Hubitat, Node-RED | Not verified. Homey and Hubitat are paid hardware; Hubitat has a community driver for Samsung appliances via the SmartThings cloud | Hubitat/Homey/Node-RED could host Hebcal logic | Varies | Each needs its own SmartThings token; not evaluated further |
+| "Shabbat Switch" (community Schema connector, Hebcal times) | Free | Merges multi-day chagim with Shabbat (author states); candle-lighting offsets and Havdalah via Hebcal | Creates a virtual switch; the author is separately testing a direct fridge `sabbathMode` path and notes Samsung blocks it on some models | A third party's server receives control of his SmartThings devices through OAuth. He must trust the author and the host. Not recommended for the fridge without reading its code and narrowing scope |
+
+Reading of the table: the only free option that is both correct on the Hebrew calendar and keeps credentials in
+his own hands is self-hosted Home Assistant. It needs an always-on machine and an ongoing running service, which
+is more moving parts than installing dated Rules once. It is the best alternative if he wants a UI, local logic
+and many devices on one screen.
+
+Overall ranking for this fridge:
+1. Dated Rules installed once (CLI or API), refreshed by a weekly GitHub Actions job if he wants "forever".
+2. Home Assistant self-hosted, if he already wants a home automation box.
+3. Cloudflare Workers instead of Actions, if Actions scheduling proves unreliable.
+4. Third-party connectors (Shabbat Switch, IFTTT, Make): only with the token risk flagged and accepted by him.
+
 ## 5. Components
 
 - `core` (done): `computeBlocks(place, from, to, options)`.
@@ -184,6 +250,16 @@ recorded SmartThings responses; an end-to-end dry run that logs commands without
 
 ## 7. Honest limits
 
+- **Unexplained early exits.** The user reports that when he first set this up himself the fridge left Sabbath mode in
+  the middle of Shabbat. Findings so far (2026-10-28): the SmartThings device history (about the last 7 days) only
+  holds door-contact events, not Sabbath status changes. In that window, Shabbat 2026-10-23/24 looks clean:
+  no door events between the Friday ON rule and the Saturday OFF rule (Sabbath mode suppresses them), and the
+  status change time equals the Saturday sunset+90 rule. Candidate causes for the earlier incident, to be checked
+  with the user's date and time: the old weekly OFF rule firing when a holiday followed Shabbat; a duplicate
+  or misconfigured rule; the fridge's own built-in schedule (the user says it exits 40 min after sunset, which is
+  what he wants to disable or avoid); a Samsung timer (Samsung's US support page says Sabbath mode stays active
+  for 85 hours, so a plain 25 hour Shabbat should not hit it); power or firmware events. Mitigation in the
+  design either way: verify the status after each ON and OFF, and alert on any unexpected change.
 - **Capability may be blocked** (not on the user's fridge: the capability is listed and a cloud off arrived). Reports exist of Samsung returning NOT_FOUND/422 for `samsungce.sabbathMode`
   on some models (Dacor cases) even when listed, and of it working on others. Only a test on the user's fridge
   settles it.
