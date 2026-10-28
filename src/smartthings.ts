@@ -93,6 +93,16 @@ export class SmartThings {
     }
     return out;
   }
+  /** Create an OAuth-In (API_ONLY) app. Needs a token with app-management scopes. */
+  createApp(body: unknown): Promise<Record<string, unknown>> {
+    return this.call('POST', '/apps', body);
+  }
+  setAppOauth(appId: string, body: unknown): Promise<Record<string, unknown>> {
+    return this.call('PUT', `/apps/${appId}/oauth`, body);
+  }
+  getAppOauth(appId: string): Promise<Record<string, unknown>> {
+    return this.call('GET', `/apps/${appId}/oauth`);
+  }
   async rules(locationId: string): Promise<StRuleSummary[]> {
     return (await this.call<{ items: StRuleSummary[] }>('GET', `/rules?locationId=${locationId}`)).items;
   }
