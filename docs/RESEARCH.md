@@ -52,6 +52,20 @@ All links were read on 2026-10-28. "Community" means forum posts, not official g
   https://community.smartthings.com/t/ep-smartapp-replacement-for-shabbat-and-holiday-modes/255274
 - Rate limits page (no Rules guardrails found): https://developer.smartthings.com/docs/getting-started/rate-limits
 
+## History, auto-exit, renewal hosting (checked 2026-10-28)
+
+- SmartThings device history API (`/v1/history/devices`) returned door contact events only for this fridge,
+  about 7 days back. Sabbath mode status changes were not in it.
+- Samsung US support: "Sabbath mode stays active for 85 hours once it's enabled, even if there is a power outage"
+  (model-dependent): https://www.samsung.com/us/support/answer/ANS10006799/
+- GitHub Actions: scheduled events can be delayed at high load, `schedule` runs only from the default branch,
+  and a cron can stop if its actor account is suspended or deleted:
+  https://docs.github.com/en/actions/how-tos/troubleshoot-workflows
+- Secrets are encrypted with libsodium sealed boxes and can be written through the REST API:
+  https://docs.github.com/en/actions/concepts/security/secrets
+- The 60-day inactivity rule for public repos comes from a third-party article, not the GitHub pages above:
+  https://latchkey.dev/learn/github-actions/github-actions-schedule-disabled-60-days-inactivity
+
 ## Jewish calendar and sunset
 
 - `@hebcal/core` computes holidays (Israel flag `il`) and zmanim offline for any latitude, longitude, time zone.

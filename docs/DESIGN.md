@@ -139,6 +139,34 @@ measure by installing a test rule. Group actions into one rule per quarter until
 ### D. SmartApp (webhook) or Edge driver
 Edge drivers need a Hub; webhook SmartApp is C plus subscriptions. Not needed.
 
+## 4b. Authentication and where the renewal job runs
+
+The 24 hour token problem. A personal access token expires after 24 hours, so it cannot be the long-term key.
+- Install-once (B1) needs no long-term key at all: a 24 hour token with Rules write installs the whole horizon and
+  can then expire. The installed Rules keep running on Samsung's servers.
+- Automatic extension needs an OAuth app (OAuth-In, API-only) authorized once by the user with his Samsung
+  login, which yields a refresh token. Refresh tokens are single-use: each refresh returns a new pair that must
+  be stored before use. A weekly refresh keeps the chain alive. Lifetime of an unused refresh token is not stated
+  in the official token-management page (**UNVERIFIED**).
+
+Where the weekly renewal job runs, GitHub Actions vs Cloudflare Workers (both free):
+
+| | GitHub Actions (public repo) | Cloudflare Workers + KV |
+| --- | --- | --- |
+| Cost | Free, public repos have no minute charge | Free tier, needs a Cloudflare account |
+| Fit for a weekly job | Good. Cron can be delayed by minutes at busy times (GitHub says so), irrelevant for weekly | Good, precise |
+| Token write-back | Repository secret updated through the REST API with a fine-grained PAT (secrets write, this repo only), or an encrypted file committed to the repo | KV write, no extra credential |
+| Concurrency | `concurrency:` group so two runs never rotate the token twice | Single cron, KV write per key |
+| Silent failure modes | Schedule can stop if the actor account is suspended or deleted; third-party reports that public-repo schedules are disabled after 60 days without repo activity (the GitHub docs pages we read did not state it, verify); needs a keep-alive | Free-plan limits (100,000 requests/day) are far above need |
+| Already in use by the user | Yes (his other projects run on Actions) | New account to set up |
+| Public exposure | Code public, secrets private. No private data in the repo | Same |
+
+Recommendation: GitHub Actions. A delayed or missed weekly run costs nothing under B1 because Samsung executes
+the Rules already installed, and the user already prefers Actions. Mitigations to build: a `concurrency` group;
+write the new refresh token to the secret before using the new access token; a final step that opens an issue if
+a run fails or the installed horizon drops under 12 months; a keep-alive so the schedule is never idle for 60 days.
+Cloudflare stays the fallback if Actions scheduling proves unreliable.
+
 ## 5. Components
 
 - `core` (done): `computeBlocks(place, from, to, options)`.
@@ -184,6 +212,16 @@ recorded SmartThings responses; an end-to-end dry run that logs commands without
 
 ## 7. Honest limits
 
+- **Unexplained early exits.** The user reports that when he first set this up himself the fridge left Sabbath mode in
+  the middle of Shabbat. Findings so far (2026-10-28): the SmartThings device history (about the last 7 days) only
+  holds door-contact events, not Sabbath status changes. In that window, Shabbat 2026-10-23/24 looks clean:
+  no door events between the Friday ON rule and the Saturday OFF rule (Sabbath mode suppresses them), and the
+  status change time equals the Saturday sunset+90 rule. Candidate causes for the earlier incident, to be checked
+  with the user's date and time: the old weekly OFF rule firing when a holiday followed Shabbat; a duplicate
+  or misconfigured rule; the fridge's own built-in schedule (the user says it exits 40 min after sunset, which is
+  what he wants to disable or avoid); a Samsung timer (Samsung's US support page says Sabbath mode stays active
+  for 85 hours, so a plain 25 hour Shabbat should not hit it); power or firmware events. Mitigation in the
+  design either way: verify the status after each ON and OFF, and alert on any unexpected change.
 - **Capability may be blocked** (not on the user's fridge: the capability is listed and a cloud off arrived). Reports exist of Samsung returning NOT_FOUND/422 for `samsungce.sabbathMode`
   on some models (Dacor cases) even when listed, and of it working on others. Only a test on the user's fridge
   settles it.
