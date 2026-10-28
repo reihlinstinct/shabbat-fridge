@@ -18,6 +18,24 @@ describe('intervalsOf', () => {
     const r = intervalsOf([s('2026-10-28T10:00:00.000Z', 0), s(`2026-10-28T${10 + Math.ceil(GAP_HOURS) + 1}:00:00.000Z`, 100)]);
     expect(r.intervals[0]!.gap).toBe(true);
   });
+  it('keeps a zero-Wh interval (a counter that did not move is valid)', () => {
+    const r = intervalsOf([s('2026-10-28T10:00:00.000Z', 500), s('2026-10-28T11:00:00.000Z', 500)]);
+    expect(r.skipped).toBe(0);
+    expect(r.intervals.map((i) => [i.wh, i.watts])).toEqual([[0, 0]]);
+  });
+  it('treats exactly the gap limit as no gap and anything longer as a gap', () => {
+    expect(intervalsOf([s('2026-10-28T10:00:00.000Z', 0), s('2026-10-28T12:30:00.000Z', 10)]).intervals[0]!.gap).toBe(false);
+    expect(intervalsOf([s('2026-10-28T10:00:00.000Z', 0), s('2026-10-28T12:30:00.001Z', 10)]).intervals[0]!.gap).toBe(true);
+  });
+  it('computes mean watts as Wh per hour for an interval that is not one hour', () => {
+    const r = intervalsOf([s('2026-10-28T10:00:00.000Z', 0), s('2026-10-28T10:30:00.000Z', 30)]);
+    expect(r.intervals[0]).toMatchObject({ hours: 0.5, wh: 30, watts: 60 });
+  });
+  it('drops an unparsable time without letting it hide or create other intervals', () => {
+    const r = intervalsOf([s('2026-10-28T10:00:00.000Z', 100), s('not a time', 50), s('2026-10-28T11:00:00.000Z', 140)]);
+    expect(r.skipped).toBe(1);
+    expect(r.intervals.map((i) => i.wh)).toEqual([40]);
+  });
 });
 
 describe('perDay', () => {
@@ -26,5 +44,9 @@ describe('perDay', () => {
     // midpoints 22:00Z (= 00:00 local on the 29th) and 00:00Z (= 02:00 local on the 29th): both on 2026-10-29
     expect(perDay(r.intervals, 'Asia/Jerusalem')).toEqual([{ day: '2026-10-29', wh: 50, hours: 4, hasGap: false }]);
     expect(perDay(r.intervals, 'UTC').map((d) => d.day)).toEqual(['2026-10-28', '2026-10-29']);
+  });
+  it('marks the day of a gap interval (by its midpoint) and not the others', () => {
+    const r = intervalsOf([s('2026-10-28T08:00:00.000Z', 0), s('2026-10-28T09:00:00.000Z', 10), s('2026-10-29T08:00:00.000Z', 100), s('2026-10-29T09:00:00.000Z', 110)]);
+    expect(perDay(r.intervals, 'UTC').map((d) => [d.day, d.hasGap])).toEqual([['2026-10-28', true], ['2026-10-29', false]]);
   });
 });
