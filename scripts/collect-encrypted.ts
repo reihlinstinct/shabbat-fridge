@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { collectOnce } from '../src/collectrun.js';
 import { readCursor } from '../src/cursorfile.js';
 import { chunkFileName } from '../src/logcrypt.js';
-import { CodedError } from '../src/record.js';
+import { CodedError, errorCode } from '../src/record.js';
 import { SmartThings } from '../src/smartthings.js';
 
 const need = (k: string): string => process.env[k] || (() => { throw new CodedError(`missing-${k.toLowerCase().replace(/_/g, '-')}`); })();
@@ -24,6 +24,6 @@ try {
   writeFileSync(need('CURSOR_OUT'), JSON.stringify({ cursor: res.cursor ?? null }));
   console.log('chunk written');
 } catch (e) {
-  console.log(`collector failed: ${e instanceof CodedError ? e.code : 'internal'}`);
+  console.log(`collector failed: ${errorCode(e)}`);
   process.exit(1);
 }

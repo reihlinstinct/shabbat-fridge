@@ -95,3 +95,12 @@ export function nextCursor(old: string | undefined, included: RecordEvent[], lef
   if (leftOut > 0 && next <= oldMs) throw new CodedError('fit-stall');
   return next === -Infinity ? undefined : new Date(next).toISOString();
 }
+
+/** The fixed code printed for any error: a CodedError keeps its code, SmartThings client errors map to a status class, anything else is `internal`. */
+export function errorCode(e: unknown): string {
+  if (e instanceof CodedError) return e.code;
+  const m = e instanceof Error ? /^SmartThings .* failed with HTTP (\d)\d\d$/.exec(e.message) : null;
+  if (m) return `smartthings-http-${m[1]}xx`;
+  if (e instanceof Error && /^SmartThings .* returned a non-JSON response/.test(e.message)) return 'smartthings-bad-response';
+  return 'internal';
+}

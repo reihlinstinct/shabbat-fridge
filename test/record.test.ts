@@ -184,3 +184,94 @@ describe('collector scripts print fixed text only', () => {
     expect(r.stdout + r.stderr).not.toContain('CANARY');
   });
 });
+
+import { existsSync, readdirSync } from 'node:fs';
+import { fakeSt } from './fixtures/fake-st.js';
+import { SmartThings } from '../src/smartthings.js';
+import { errorCode } from '../src/record.js';
+import { resolve } from 'node:path';
+
+describe('review follow-ups', () => {
+  const now = new Date(NOW);
+  it('overflow: ~3000 events give one chunk, the cursor follows the last included event, and the next run continues', async () => {
+    const all = Array.from({ length: 3000 }, (_, i) => ev(iso(NOW - 40 * 3600e3 + i * 40000), Math.random().toString(36), i));
+    const r1 = await collectOnce({ client: client(all), publicKey: kp.publicKey, cursor: undefined, now });
+    expect(r1.chunk.length).toBe(chunkSize());
+    const rec1 = read(r1.chunk);
+    expect(rec1.events.length).toBeGreaterThan(10);
+    expect(rec1.events.length).toBeLessThan(3000);
+    const newest = Math.max(...rec1.events.map((e) => Date.parse(e.time)));
+    expect(r1.cursor).toBe(iso(Math.floor(newest / HOUR_MS) * HOUR_MS - HOUR_MS));
+    const r2 = await collectOnce({ client: client(all), publicKey: kp.publicKey, cursor: r1.cursor, now });
+    const rec2 = read(r2.chunk);
+    expect(Date.parse(rec2.events[0]!.time)).toBeGreaterThan(Date.parse(r1.cursor!));
+    expect(Date.parse(r2.cursor!)).toBeGreaterThan(Date.parse(r1.cursor!));
+  });
+  it('fit-stall: a dense hour that cannot advance the cursor fails with a coded error', async () => {
+    const dense = Array.from({ length: 4000 }, (_, i) => ev(iso(Date.parse('2026-10-28T11:00:01Z') + i * 400), Math.random().toString(36), i));
+    await expect(collectOnce({ client: client(dense), publicKey: kp.publicKey, cursor: '2026-10-28T11:00:00.000Z', now })).rejects.toThrow(/fit-stall/);
+  });
+  it('a future-dated event is sent but does not move the cursor', async () => {
+    const r = await collectOnce({ client: client([ev('2027-03-01T00:00:00.000Z')]), publicKey: kp.publicKey, cursor: '2026-10-28T08:00:00.000Z', now });
+    expect(read(r.chunk).events).toHaveLength(1);
+    expect(r.cursor).toBe('2026-10-28T08:00:00.000Z');
+  });
+  it('a real SmartThings client run makes only GET requests', async () => {
+    const log: Array<{ method: string; path: string }> = [];
+    const st = new SmartThings('T', fakeSt([ev('2026-10-28T10:00:00.000Z')], log));
+    const r = await collectOnce({ client: st, publicKey: kp.publicKey, cursor: undefined, now });
+    expect(r.chunk.length).toBe(chunkSize());
+    expect(log.length).toBeGreaterThan(5);
+    expect(log.every((l) => l.method === 'GET')).toBe(true);
+    expect(new Set(log.map((l) => l.path))).toEqual(new Set(['/locations', '/locations/L1', '/devices', '/devices/D1/status', '/rules', '/rules/R1', '/history/devices']));
+  });
+  it('error codes: status class, bad response, coded, internal', () => {
+    expect(errorCode(new Error('SmartThings GET /devices failed with HTTP 503'))).toBe('smartthings-http-5xx');
+    expect(errorCode(new Error('SmartThings GET /devices failed with HTTP 401'))).toBe('smartthings-http-4xx');
+    expect(errorCode(new Error('SmartThings GET /x returned a non-JSON response (HTTP 200)'))).toBe('smartthings-bad-response');
+    expect(errorCode(new CodedError('fit-stall'))).toBe('fit-stall');
+    expect(errorCode(new Error('CANARY'))).toBe('internal');
+    expect(errorCode('CANARY')).toBe('internal');
+  });
+  it('applyCursor ignores an older cursor and leaves no .tmp file behind', () => {
+    const key = newKey();
+    const dir = mkdtempSync(join(tmpdir(), 'cur2-'));
+    const file = join(dir, 's.json');
+    writeFileSync(file, JSON.stringify(seal({ clientId: 'C', clientSecret: 'S', refreshToken: 'R', obtainedAt: '2026-10-28T00:00:00.000Z', eventCursor: '2026-10-28T10:00:00.000Z' }, key)));
+    applyCursor(file, key, '2026-10-28T08:00:00.000Z');
+    expect(readCursor(file, key)).toBe('2026-10-28T10:00:00.000Z');
+    applyCursor(file, key, '2026-10-28T11:00:00.000Z');
+    expect(readCursor(file, key)).toBe('2026-10-28T11:00:00.000Z');
+    expect(() => applyCursor(file, key, '2026-10-28T12:00:00.000Z', (p) => writeFileSync(p, 'junk'))).toThrow();
+    expect(existsSync(`${file}.tmp`)).toBe(false);
+    expect(readdirSync(dir)).toEqual(['s.json']);
+  });
+  const stub = resolve('test/fixtures/fetch-stub.mjs');
+  const run = (script: string, env: Record<string, string>) => spawnSync('npx', ['--no-install', 'tsx', script], { env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', NODE_OPTIONS: `--import ${stub}`, ...env }, encoding: 'utf8' });
+  it('script success path: collect-encrypted writes one chunk and the hand-off, apply-cursor seals', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'run-'));
+    const key = newKey();
+    const stateFile = join(dir, 'state.json');
+    writeFileSync(stateFile, JSON.stringify(seal({ clientId: 'C', clientSecret: 'S', refreshToken: 'R', obtainedAt: '2026-10-28T00:00:00.000Z' }, key)));
+    const pub = join(dir, 'logs.pub');
+    writeFileSync(pub, kp.publicKey + '\n');
+    const out = join(dir, 'out');
+    const handoff = join(dir, 'cursor.json');
+    const t = new Date().toISOString();
+    const env = { ST_TOKEN: 'T', STATE_FILE: stateFile, STATE_KEY: key, LOGS_PUBLIC_KEY_FILE: pub, CHUNK_DIR: out, CURSOR_OUT: handoff, STUB_EVENTS: JSON.stringify([ev(t)]) };
+    const r = run('scripts/collect-encrypted.ts', env);
+    expect(r.stdout).toBe('chunk written\n');
+    expect(r.status).toBe(0);
+    const files = readdirSync(join(out, 'chunks'));
+    expect(files).toHaveLength(1);
+    expect(files[0]).toMatch(/^[0-9a-f]{32}\.bin$/);
+    expect(readFileSync(join(out, 'chunks', files[0]!)).length).toBe(chunkSize());
+    const cur = (JSON.parse(readFileSync(handoff, 'utf8')) as { cursor: string | null }).cursor;
+    expect(cur).toBe(iso(Math.floor(Date.parse(t) / HOUR_MS) * HOUR_MS - HOUR_MS));
+    const a = run('scripts/apply-cursor.ts', env);
+    expect(a.stdout).toBe('state sealed\n');
+    expect(a.status).toBe(0);
+    expect(readCursor(stateFile, key)).toBe(cur);
+    expect(existsSync(`${stateFile}.tmp`)).toBe(false);
+  });
+});
