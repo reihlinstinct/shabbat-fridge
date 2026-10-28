@@ -54,6 +54,7 @@ export function sunset(place: Place, day: Date): Date {
  * Contiguous "no-touch" blocks between start and end (local dates, inclusive).
  * Adjacent days (Yom Tov next to Shabbat, or Yom Tov days in a row) merge into one block,
  * so the mode never drops in the middle of a holiday.
+ * A block is returned if any part of it, from its ON time on the eve to its OFF time, falls on a day in the range.
  */
 export function computeBlocks(place: Place, start: Date, end: Date, opts: Options = {}): Block[] {
   const entry = opts.entryMinutesBeforeSunset ?? 10;
@@ -93,5 +94,6 @@ export function computeBlocks(place: Place, start: Date, end: Date, opts: Option
   flush();
   const s = ymd(start);
   const e = ymd(end);
-  return blocks.filter((b) => b.days[b.days.length - 1]! >= s && b.days[0]! <= e);
+  // Keep blocks whose ON time (the eve of the first day) up to OFF time touches [start, end].
+  return blocks.filter((b) => b.days[b.days.length - 1]! >= s && ymd(addDays(new Date(b.days[0]! + 'T00:00:00'), -1)) <= e);
 }
