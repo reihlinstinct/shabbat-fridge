@@ -56,6 +56,9 @@ The old collector deduplicated history events by reading its earlier files. In t
 - **Behavior:** decrypts every chunk; unknown version byte, wrong size or any failure counts as a failure and the exit code is non-zero; nothing is dropped silently. Groups spilled chunks, dedupes events by `k`, and writes `snapshots/YYYY-MM/*.json` and `events/YYYY-MM.ndjson`, the layout `scripts/analyze.ts` already reads. Output is counts and the hours-since-newest-chunk figure only.
 - **Tests:** round trip; duplicate events removed; tampered, truncated, unknown-version and foreign-key chunks counted with a non-zero exit; refusal under CI; key file symlink and wide mode; output inside a nested `.git` file and directory; output inside `LOGS_DIR`; non-empty output; canary never printed.
 
+## Energy analysis (`scripts/energy.ts`)
+Runs on the owner's side on the decrypt output, like `analyze.ts`: `SNAP_DIR=<decrypt output> npx tsx scripts/energy.ts`. It turns the cumulative `energy.totalWh` counter of consecutive snapshots into intervals (Wh, hours, mean watts) and per-day totals in the place's time zone. Intervals longer than 2.5 hours are marked as gaps (the collector missed runs). Snapshots without a counter (older ones), a counter that goes down and repeated times are skipped and counted. The output is consumption data: never run it in CI or paste it publicly.
+
 ## Not migrated
 The plaintext-era data (one snapshot taken 2026-10-28 13:48 in the private repo `reihlinstinct/shabbat-fridge-logs`) is not migrated. It stays private there. Analysis can merge it by copying it into the decrypt output directory by hand.
 
