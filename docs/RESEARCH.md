@@ -34,6 +34,24 @@ All links were read on 2026-10-28. "Community" means forum posts, not official g
 - Architecture overview: https://developer.smartthings.com/docs/getting-started/architecture-of-smartthings
 - Public API reference: https://developer.smartthings.com/docs/api/public
 
+## What runs where (checked 2026-10-28)
+
+- Edge drivers are Lua drivers that run on a SmartThings Hub for Zigbee, Z-Wave, Matter and LAN devices:
+  https://support.smartthings.com/hc/en-us/articles/5685949017492-Edge-Drivers-for-New-Devices-FAQ
+  and "edge drivers run on the hub, so are not cloud to cloud": https://community.smartthings.com/t/general-question-about-c2c-devices/254030
+- Schema App (cloud connected devices) is an AWS Lambda or a webhook endpoint that the developer hosts:
+  https://developer.smartthings.com/docs/devices/cloud-connected/schema-app
+- Developer Workspace cloud-connected projects ended 2025-08-05 (moved to Developer Center):
+  https://developer.smartthings.com/docs/devices/cloud-connected/migrate
+- Groovy shutdown dates: https://support.smartthings.com/hc/en-us/articles/9339624925204-Platform-Transition-FAQ
+- Routines are IF/THEN with times, weekdays, device activity, presence; no calendar of holidays:
+  https://support.smartthings.com/hc/en-us/articles/360051931952-Routines-in-SmartThings
+- Prior art for Shabbat: a free Schema connector "Shabbat Switch" (Hebcal times, merges multi-day chagim with
+  Shabbat) and an open-source smartthings-shabbos-mode; both run on the author's host or the user's setup:
+  https://community.smartthings.com/t/free-integration-automate-shabbat-trying-to-unlock-samsung-fridge-sabbath-mode-via-api-looking-for-testers/310577
+  https://community.smartthings.com/t/ep-smartapp-replacement-for-shabbat-and-holiday-modes/255274
+- Rate limits page (no Rules guardrails found): https://developer.smartthings.com/docs/getting-started/rate-limits
+
 ## Jewish calendar and sunset
 
 - `@hebcal/core` computes holidays (Israel flag `il`) and zmanim offline for any latitude, longitude, time zone.

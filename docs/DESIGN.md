@@ -52,6 +52,34 @@ already runs three Rules on it. Those rules prove (a) the Rules API accepts date
 at the scheduled time (status changed at the rule's Saturday sunset+90 minutes). This corrects an earlier
 assumption that Rules are weekday-only.
 
+### What can run on Samsung's servers (checked 2026-10-28, sources in RESEARCH.md)
+
+The user asked for this to be built into SmartThings and to run on Samsung's servers. Honest answer:
+
+| Option | Runs where | Can it do this job? |
+| --- | --- | --- |
+| Routines (app UI) | Samsung cloud | No. Conditions are times, weekdays, device states, presence. No Hebrew calendar, no holidays by date range. |
+| Rules API (`every` + `specific` date + Sunset) | Samsung cloud (or Hub when all devices are local) | Yes, for fixed dates. It is the only logic that executes on Samsung's servers, so dated rules are effectively the built-in way. It has no Hebrew-calendar knowledge: we compute the dates and hand them over. |
+| Edge drivers (Lua) | The user's SmartThings Hub, locally | No for this fridge. Edge targets Matter, Zigbee, Z-Wave and LAN devices on a Hub; the fridge is a cloud-connected Samsung device. Needs a Hub, which is unconfirmed. |
+| Schema connector (cloud-to-cloud) | Developer-hosted AWS Lambda or webhook | Not Samsung-hosted. Doable (a community project "Shabbat Switch" does this, see RESEARCH.md) but adds a third-party host. |
+| Webhook SmartApp / OAuth integration | Developer-hosted | Not Samsung-hosted. |
+| Groovy SmartApps (the old Samsung-hosted code) | Was Samsung cloud | Shut down 31 Dec 2022. |
+| Developer Workspace cloud projects | Was Samsung tooling | Cloud-connected projects ended in Developer Workspace on 5 Aug 2025 (moved to the Developer Center, still developer-hosted). |
+
+No Samsung-hosted runtime for third-party logic was found. So the only no-host design is dated Rules.
+
+### Long-horizon dated Rules (B1): zero hosting, Samsung executes
+Dates in the Hebrew calendar are pure arithmetic, so we can generate many years at once. Install as many years as
+the Rules guardrails allow (to measure: actions per rule, rules per location), for example 5 to 10 years, split
+into one rule per quarter or year. SmartThings then runs everything, including the Sunset math, with nothing of
+ours alive. Renewal is a one-off job every N years (a calendar reminder, or the optional weekly service below).
+Limits to state plainly: it covers only the generated horizon, and a changed location (moving house) needs the rules
+regenerated because offsets follow the SmartThings Location's sunset.
+
+Updated recommendation: install B1 now for the longest horizon the guardrails allow. Keep the weekly Cloudflare
+service (B2) as an optional extension for "automatic forever", since it only adds rules and nothing breaks if it
+stops. Decision order: measure limits, install B1, then decide if B2 is worth the OAuth setup.
+
 ### A. SmartThings Routines (native, no code)
 The Routines UI does not expose the Sabbath capability (community report). Rejected.
 

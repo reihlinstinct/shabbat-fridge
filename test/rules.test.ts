@@ -46,4 +46,12 @@ describe('diffRules (dry run)', () => {
     const diff = diffRules(existing, [], 'FRIDGE');
     expect(diff.extra).toEqual(['2026-09-11 on -40']);
   });
+
+  it('counts actions it ignores (other reference or other device)', () => {
+    const other: Rule[] = [
+      { name: 'x', actions: [{ every: { specific: { year: 2026, month: 1, day: 1, reference: 'Noon' as 'Sunset', offset: { value: { integer: 0 }, unit: 'Minute' } }, actions: [{ command: { devices: ['FRIDGE'], commands: [{ component: 'main', capability: 'samsungce.sabbathMode', command: 'on' }] } }] } }] },
+      { name: 'y', actions: [{ every: { specific: { year: 2026, month: 1, day: 1, reference: 'Sunset', offset: { value: { integer: 0 }, unit: 'Minute' } }, actions: [{ command: { devices: ['OTHER'], commands: [{ component: 'main', capability: 'samsungce.sabbathMode', command: 'on' }] } }] } }] },
+    ];
+    expect(diffRules(other, [], 'FRIDGE').skipped).toBe(2);
+  });
 });

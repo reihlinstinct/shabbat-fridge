@@ -1,7 +1,7 @@
 [
-  {"name":"Shabbat mode","actions":[{"every":{"specific":{"daysOfWeek":["Fri"],"reference":"Sunset","offset":{"value":{"integer":-60},"unit":"Minute"}},"actions":[{"command":{"devices":["FRIDGE"],"commands":[{"component":"main","capability":"samsungce.sabbathMode","command":"on"}]}}]}}]},
-  {"name":"Weekday Mode","actions":[{"every":{"specific":{"daysOfWeek":["Sat"],"reference":"Sunset","offset":{"value":{"integer":90},"unit":"Minute"}},"actions":[{"command":{"devices":["FRIDGE"],"commands":[{"component":"main","capability":"samsungce.sabbathMode","command":"off"}]}}]}}]},
-  {"name":"Holidays 2026","actions":[
+  {"name":"Weekly on","actions":[{"every":{"specific":{"daysOfWeek":["Fri"],"reference":"Sunset","offset":{"value":{"integer":-60},"unit":"Minute"}},"actions":[{"command":{"devices":["FRIDGE"],"commands":[{"component":"main","capability":"samsungce.sabbathMode","command":"on"}]}}]}}]},
+  {"name":"Weekly off","actions":[{"every":{"specific":{"daysOfWeek":["Sat"],"reference":"Sunset","offset":{"value":{"integer":90},"unit":"Minute"}},"actions":[{"command":{"devices":["FRIDGE"],"commands":[{"component":"main","capability":"samsungce.sabbathMode","command":"off"}]}}]}}]},
+  {"name":"Dated entries","actions":[
     {"every":{"specific":{"year":2026,"month":9,"day":11,"reference":"Sunset","offset":{"value":{"integer":-40},"unit":"Minute"}},"actions":[{"command":{"devices":["FRIDGE"],"commands":[{"component":"main","capability":"samsungce.sabbathMode","command":"on"}]}}]}}
   ]}
 ]
