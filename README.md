@@ -44,4 +44,5 @@ Note: the holiday re-ON (+100 min on a Saturday before a holiday) assumes the we
 
 Optional: both workflows can also manage a weekly Shabbat rule (`weekly_rules`, off by default). See docs/INSTALL-WORKFLOW.md.
 Optional: read-only snapshot collector and analyzer for post-incident analysis (private storage only). See docs/FORENSICS.md.
+Optional: hourly collector in this repository with encrypted logs (`collector` workflow, `logs` and `state` branches, `scripts/decrypt-logs.ts` for the owner). Design: docs/ENCRYPTED-LOGS.md and docs/ENCRYPTED-LOGS-COLLECTOR.md. It stays inactive unless the repository variable COLLECTOR_ENABLED is `true`, and needs the setup described there (public key in config/logs.pub, `collector` Environment with STATE_KEY).
 Unattended token rotation and yearly installer: see docs/UNATTENDED.md.
