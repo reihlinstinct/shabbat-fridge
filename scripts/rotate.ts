@@ -5,11 +5,13 @@
  * ST_TOKEN for later steps (GITHUB_ENV).
  */
 import { appendFileSync } from 'node:fs';
+import { isToken } from '../src/oauth.js';
 import { rotateFile } from '../src/rotatefile.js';
 
 const key = process.env.STATE_KEY || '';
 if (!key) throw new Error('missing STATE_KEY');
 const { accessToken, obtainedAt, rotated } = await rotateFile(process.env.STATE_FILE || 'state/oauth.enc.json', key);
+if (!isToken(accessToken)) throw new Error('refusing to export a malformed access token');
 if (process.env.GITHUB_ENV) {
   console.log(`::add-mask::${accessToken}`);
   appendFileSync(process.env.GITHUB_ENV, `ST_TOKEN=${accessToken}\n`);

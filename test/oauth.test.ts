@@ -208,3 +208,27 @@ describe('persisted read-back before the atomic rename', () => {
     expect(readFileSync(file, 'utf8')).toBe(before);
   });
 });
+
+describe('cached state validation', () => {
+  const write = (st: Partial<OAuthState>) => {
+    const key = newKey();
+    const file = join(mkdtempSync(join(tmpdir(), 'cs-')), 's.json');
+    writeFileSync(file, JSON.stringify(seal({ ...STATE, ...st } as OAuthState, key)));
+    return { key, file };
+  };
+  const future = new Date(Date.now() + 20 * 3600 * 1000).toISOString();
+  for (const bad of ['CACHE\nINJECTED=1', 'a b', 'x\r\ny', '']) {
+    it(`rejects a cached accessToken ${JSON.stringify(bad)} without exporting it`, async () => {
+      const { key, file } = write({ accessToken: bad, accessExpiresAt: future });
+      await expect(rotateFile(file, key)).rejects.toThrow(/incomplete or malformed/);
+    });
+    it(`rejects a stored refreshToken ${JSON.stringify(bad)}`, () => {
+      const { key, file } = write({ refreshToken: bad });
+      expect(() => open(JSON.parse(readFileSync(file, 'utf8')), key)).toThrow(/malformed/);
+    });
+  }
+  it('still accepts the setup "pending" sentinel', () => {
+    const { key, file } = write({ refreshToken: 'pending' });
+    expect(open(JSON.parse(readFileSync(file, 'utf8')), key).refreshToken).toBe('pending');
+  });
+});
