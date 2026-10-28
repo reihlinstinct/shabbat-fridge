@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SmartThings authorization code</title>
+<style>body{font-family:system-ui,sans-serif;max-width:34rem;margin:3rem auto;padding:0 1rem}code{background:#eee;padding:.4rem .6rem;display:block;word-break:break-all;margin:.6rem 0}</style></head>
+<body>
+<h1>SmartThings authorization</h1>
+<p id="msg">Waiting for a code...</p>
+<code id="code" hidden></code>
+<p id="next" hidden>Copy the code above and paste it into the secure Instinct link you were given. Do not share it anywhere else. It works once and expires quickly.<br>
+העתק את הקוד והדבק אותו בקישור המאובטח שקיבלת. הקוד חד-פעמי ופג תוקף מהר.</p>
+<script>
+// Static page: nothing is sent anywhere. It only shows the ?code= value from the address bar.
+var p = new URLSearchParams(location.search);
+var c = p.get("code"), e = p.get("error"), st = p.get("state") || "";
+var msg = document.getElementById("msg");
+if (c) { msg.textContent = "Your authorization code (paste it whole, including the part after ~):"; var el = document.getElementById("code"); el.textContent = c + "~" + st; el.hidden = false; document.getElementById("next").hidden = false; }
+else if (e) { msg.textContent = "Authorization was not granted (" + e.replace(/[^a-z_]/g, "") + "). You can close this page."; }
+else { msg.textContent = "No code in the address. Start again from the authorization link."; }
+history.replaceState(null, "", location.pathname);
+</script>
+</body></html>
