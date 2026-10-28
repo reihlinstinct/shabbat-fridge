@@ -1,6 +1,6 @@
 # Design (item c): the public-repo collector, state branch and decrypt script
 
-Status: proposal. Builds on docs/ENCRYPTED-LOGS.md (merged) and src/logcrypt.ts (merged). No code, workflow, key or secret exists yet for this item. Nothing runs until the code PRs are reviewed and the owner approves. Item (d) sets up keys, the Environment and secrets.
+Status: implemented and deployed 2026-10-28 (c1 to c4 and item d merged). The text below is the design; read the code for exact behavior. Compaction (item e) is not built.
 
 Item (c) is split into four PRs, each with its own issue, independent review and owner OK: **c1** record and cursor, **c2** branch store, **c3** workflow, keepalive and workflow lint test, **c4** decrypt script. (This replaces the single "(c)" in item 11 of the main design, which is updated to match.)
 
