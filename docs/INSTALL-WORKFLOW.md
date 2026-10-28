@@ -36,7 +36,7 @@ Open the run summary. It lists: calendar (Israel or Diaspora), time zone, offset
 (create / update / unchanged / remove), plus how many other rules are left alone. Nothing is written.
 
 Then run again with **Dry run** unticked to apply. The job reads the rules back and prints
-`rules match the plan; other rules unchanged: true`. If it prints MISMATCH, nothing else is touched; run the dry run again.
+`rules match the plan; other rules unchanged: true`. The read-back check runs after the writes. If it prints MISMATCH, the rules were already written and may differ from the plan (your other rules are never touched); run the workflow again with the default dry run to see exactly what differs, then fix or re-apply.
 
 Defaults: ON 60 minutes before sunset, OFF 90 minutes after, re-ON 100 minutes after sunset on a Saturday followed by a
 holiday, Yom Kippur included, 10 years. Location, country, time zone and the fridge are read from SmartThings
@@ -66,3 +66,15 @@ coordinates) and the fridge from your SmartThings account, and runs the same Heb
 
 Rolling horizon: run the install workflow again any time (for example once a year). It extends the 10 years from the day it
 runs, replaces only our `shabbat-fridge holidays YYYY` rules, and with **Prune** also removes our rules for past years.
+
+## After a real run / אחרי הרצה אמיתית
+
+Run the workflow once more with the default dry run. The plan should say `unchanged` for every rule (create 0, update 0, remove 0).
+If it shows `update` for rules you just wrote, SmartThings normalized something differently from the plan: open an issue with the summary.
+The time zone stays explicit: it comes from your SmartThings location, never from the runner.
+
+## Important limit / מגבלה חשובה
+
+The +100 re-ON after a Saturday that is followed by a holiday assumes the weekly Saturday OFF rule fires at +90 minutes or earlier.
+If your weekly OFF is later than +100 (or removed), the re-ON would fire before it and the OFF would then turn Sabbath mode off during the holiday.
+Keep the weekly OFF at +90 or earlier, or lower re-ON accordingly.

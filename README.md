@@ -39,3 +39,5 @@ Calendar and sunset data come from [@hebcal/core](https://github.com/hebcal/hebc
 Not a halachic authority. Defaults (Yom Kippur, offsets) are settings. Confirm with your own rabbi.
 
 License: MIT.
+
+Note: the holiday re-ON (+100 min on a Saturday before a holiday) assumes the weekly Saturday OFF fires at +90 or earlier. See docs/INSTALL-WORKFLOW.md.
