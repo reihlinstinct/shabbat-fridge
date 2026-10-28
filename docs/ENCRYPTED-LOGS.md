@@ -1,6 +1,6 @@
 # Design: run the collector in the public repo with encrypted logs
 
-Status: proposal, not deployed. Needs independent review and the owner's OK before any workflow is added.
+Status: deployed and running since 2026-10-28 (items a to d done: crypto, record, state branch, collector and keepalive workflows, decrypt script, public key, `collector` Environment, `main` ruleset). Item (e), compaction, is not built. The design below is kept as written; where the code differs, docs/ENCRYPTED-LOGS-COLLECTOR.md and the code win.
 
 ## Why
 The private logs repo cannot run Actions (GitHub reports a billing block for private repos on this account). Public repos get free minutes. The owner wants the logs kept, encrypted with a secret, so the collector can run here. The owner chose to keep raw snapshots, not only aggregates. That is his choice and it raises the stakes of the residual risks below.
