@@ -103,3 +103,49 @@ describe('log crypto', () => {
     for (const n of names) expect(n).toMatch(/^[0-9a-f]{32}\.bin$/);
   });
 });
+
+describe('safe failures and malformed parts', () => {
+  const canary = 'CANARY-private-door-timing';
+  const whole = (e: unknown): string => JSON.stringify(e, Object.getOwnPropertyNames(e as object)) + String(e);
+  it('openJson throws a fixed error that does not quote the plaintext (not gzip, gzip of non-JSON)', async () => {
+    const { gzipSync } = await import('node:zlib');
+    for (const data of [Buffer.from(canary), gzipSync(Buffer.from(canary)), gzipSync(Buffer.from('{"a":' + canary))]) {
+      const chunks = encryptLog(data, kp.publicKey, CTX);
+      let err: unknown;
+      try { openJson(chunks, kp.privateKey, CTX); } catch (e) { err = e; }
+      expect(err).toBeInstanceOf(Error);
+      expect((err as Error).message).toBe('The decrypted log is not valid compressed JSON');
+      expect(whole(err)).not.toContain(canary);
+      expect(whole(err)).not.toContain('CANARY');
+    }
+  });
+  const good = { group: 'a'.repeat(32), index: 0, total: 1, data: Buffer.from('x') };
+  it('assemble accepts a well-formed single part', () => {
+    expect(assemble([good]).toString()).toBe('x');
+  });
+  it('assemble rejects malformed parts', () => {
+    const bad: unknown[] = [
+      { ...good, group: 'zz' },
+      { ...good, group: 'A'.repeat(32) },
+      { ...good, total: 0 },
+      { ...good, total: 65536 },
+      { ...good, total: 1.5 },
+      { ...good, index: -1 },
+      { ...good, index: 1 },
+      { ...good, index: 0.5 },
+      { ...good, index: Number.NaN },
+      { ...good, data: 'x' },
+      { ...good, total: Number.POSITIVE_INFINITY },
+      null,
+      'x',
+    ];
+    for (const b of bad) expect(() => assemble([b as never])).toThrow(/malformed/);
+    expect(() => assemble([good, { ...good, group: 'b'.repeat(32) }])).toThrow(/different groups/);
+    expect(() => assemble({} as never)).toThrow();
+  });
+  it('assemble needs every index before joining, even when the count matches', () => {
+    const g = 'c'.repeat(32);
+    expect(() => assemble([{ group: g, index: 0, total: 2, data: Buffer.from('a') }, { group: g, index: 0, total: 2, data: Buffer.from('b') }])).toThrow(/duplicate/);
+    expect(assemble([{ group: g, index: 1, total: 2, data: Buffer.from('b') }, { group: g, index: 0, total: 2, data: Buffer.from('a') }]).toString()).toBe('ab');
+  });
+});

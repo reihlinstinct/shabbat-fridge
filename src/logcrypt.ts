@@ -132,9 +132,13 @@ export function decryptChunk(chunk: Buffer, privateKey: string, context: string,
   return { group: payload.subarray(0, 16).toString('hex'), index, total, data: Buffer.from(payload.subarray(HEADER, HEADER + len)) };
 }
 
-/** Join decrypted chunks of one group (any order). Throws on mixed groups, duplicates or missing parts. */
+/** Join decrypted chunks of one group (any order). Throws on malformed parts, mixed groups, duplicates or missing parts. */
 export function assemble(parts: Decrypted[]): Buffer {
-  if (parts.length === 0) throw new Error('no chunks');
+  if (!Array.isArray(parts) || parts.length === 0) throw new Error('no chunks');
+  for (const p of parts) {
+    const ok = p !== null && typeof p === 'object' && typeof p.group === 'string' && /^[0-9a-f]{32}$/.test(p.group) && Number.isInteger(p.total) && p.total >= 1 && p.total <= MAX_CHUNKS && Number.isInteger(p.index) && p.index >= 0 && p.index < p.total && Buffer.isBuffer(p.data);
+    if (!ok) throw new Error('malformed chunk part');
+  }
   const { group, total } = parts[0]!;
   const byIndex = new Map<number, Buffer>();
   for (const p of parts) {
@@ -143,15 +147,28 @@ export function assemble(parts: Decrypted[]): Buffer {
     byIndex.set(p.index, p.data);
   }
   if (byIndex.size !== total) throw new Error('missing chunks');
-  return Buffer.concat(Array.from({ length: total }, (_, i) => byIndex.get(i)!));
+  const ordered: Buffer[] = [];
+  for (let i = 0; i < total; i++) {
+    const d = byIndex.get(i);
+    if (d === undefined) throw new Error('missing chunks');
+    ordered.push(d);
+  }
+  return Buffer.concat(ordered);
 }
 
 /** Gzip, then encrypt. */
 export const sealJson = (value: unknown, recipientPublicKey: string, context: string, bucket = DEFAULT_BUCKET): Buffer[] =>
   encryptLog(gzipSync(Buffer.from(JSON.stringify(value), 'utf8')), recipientPublicKey, context, bucket);
 
-export const openJson = (chunks: Buffer[], privateKey: string, context: string, bucket = DEFAULT_BUCKET): unknown =>
-  JSON.parse(gunzipSync(assemble(chunks.map((c) => decryptChunk(c, privateKey, context, bucket)))).toString('utf8'));
+export function openJson(chunks: Buffer[], privateKey: string, context: string, bucket = DEFAULT_BUCKET): unknown {
+  const data = assemble(chunks.map((c) => decryptChunk(c, privateKey, context, bucket)));
+  try {
+    return JSON.parse(gunzipSync(data).toString('utf8')) as unknown;
+  } catch {
+    // The native errors can quote the decrypted text, so they are never passed on.
+    throw new Error('The decrypted log is not valid compressed JSON');
+  }
+}
 
 /** A random opaque chunk file name: 128 random bits, no counter, no timestamp. */
 export const chunkFileName = (): string => `${randomBytes(16).toString('hex')}.bin`;
