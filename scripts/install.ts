@@ -7,7 +7,7 @@
  */
 import { appendFileSync } from 'node:fs';
 import { computeBlocks, type Place } from '../src/blocks.js';
-import { isEmpty, planInstall, type ExistingRule } from '../src/install.js';
+import { isEmpty, planInstall, resolveIsrael, type ExistingRule } from '../src/install.js';
 import { crossCheckOrThrow } from '../src/crosscheck.js';
 import { holidayOnlyActions, rulesByYear } from '../src/rules.js';
 import { SmartThings, sabbathDevices } from '../src/smartthings.js';
@@ -34,7 +34,7 @@ const fridges = sabbathDevices(await st.devices(), locationId);
 const deviceId = env('DEVICE_ID') || (fridges.length === 1 ? fridges[0]!.deviceId : '');
 if (!deviceId) throw new Error(`Found ${fridges.length} devices with ${'samsungce.sabbathMode'}; set DEVICE_ID`);
 if (loc.latitude == null || loc.longitude == null || !loc.timeZoneId) throw new Error('The SmartThings Location has no coordinates or time zone; set them in the SmartThings app');
-const israel = env('ISRAEL') ? env('ISRAEL') === 'true' : loc.countryCode === 'ISR' || loc.countryCode === 'IL';
+const israel = process.env.CALENDAR ? resolveIsrael(process.env.CALENDAR, loc.countryCode) : env('ISRAEL') ? env('ISRAEL') === 'true' : resolveIsrael('auto', loc.countryCode);
 const place: Place = { latitude: loc.latitude, longitude: loc.longitude, tzid: loc.timeZoneId, israel };
 
 const startStr = env('START') || new Date().toISOString().slice(0, 10);

@@ -58,7 +58,7 @@ The rules already installed keep running on Samsung's servers after the token is
 calendar core, cross-checks every Yom Tov day against the public Hebcal web API (it fails if they disagree), and uploads
 an artifact `holiday-rules` with `holiday-rules.json` (a placeholder device id: `YOUR-DEVICE-ID`) and an annotated
 `holiday-schedule.md` (Hebrew and English holiday names, Hebrew dates, each ON/OFF with its sunset offset).
-Defaults are Jerusalem and the Israel calendar; change latitude, longitude, time zone or untick Israel for another place.
+Defaults are Jerusalem and the Israel calendar; change latitude, longitude, time zone or choose calendar = diaspora for another place.
 
 The install workflow does not use this artifact: it recomputes the same rules itself, reading the location (country, time zone,
 coordinates) and the fridge from your SmartThings account, and runs the same Hebcal cross-check before writing anything.
@@ -66,3 +66,13 @@ coordinates) and the fridge from your SmartThings account, and runs the same Heb
 
 Rolling horizon: run the install workflow again any time (for example once a year). It extends the 10 years from the day it
 runs, replaces only our `shabbat-fridge holidays YYYY` rules, and with **Prune** also removes our rules for past years.
+
+## Second day of Yom Tov outside Israel / יום טוב שני של גלויות
+
+Both workflows have a `calendar` input. Default for **Install** is `auto`: Israel (one day of Yom Tov) when the SmartThings
+location country is Israel, Diaspora otherwise. Choose `diaspora` to add the second day of Yom Tov (Yom Tov Sheni shel
+Galuyot), for example when you keep it while visiting abroad, or when your location is set outside Israel but you want it
+explicitly. Choose `israel` to force one day. For **Generate** the default is `israel`; `diaspora` gives two days.
+The Hebcal cross-check uses the same choice (`i=on` for Israel, `i=off` for Diaspora). Dates follow the Hebrew calendar rules in
+the calendar core; known dates are in the tests (for example Diaspora 2026-10-03 and 2026-10-04).
+ברירת המחדל: ישראל, יום טוב אחד. לבחירת יום טוב שני: calendar = diaspora.

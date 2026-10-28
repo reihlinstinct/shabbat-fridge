@@ -72,3 +72,19 @@ describe('SmartThings client', () => {
     expect(sabbathDevices(devs, 'L').map((d) => d.deviceId)).toEqual(['1']);
   });
 });
+
+import { resolveIsrael } from '../src/install.js';
+describe('resolveIsrael (calendar choice)', () => {
+  it('auto follows the location country', () => {
+    expect(resolveIsrael('auto', 'ISR')).toBe(true);
+    expect(resolveIsrael(undefined, 'IL')).toBe(true);
+    expect(resolveIsrael('auto', 'USA')).toBe(false);
+  });
+  it('diaspora forces two-day Yom Tov even in Israel; israel forces one day abroad', () => {
+    expect(resolveIsrael('diaspora', 'ISR')).toBe(false);
+    expect(resolveIsrael('israel', 'USA')).toBe(true);
+  });
+  it('rejects unknown values', () => {
+    expect(() => resolveIsrael('both', 'ISR')).toThrow();
+  });
+});

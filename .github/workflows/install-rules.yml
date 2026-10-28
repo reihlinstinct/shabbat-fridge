@@ -19,6 +19,11 @@ on:
       include_yom_kippur:
         type: boolean
         default: true
+      calendar:
+        description: 'auto = by the SmartThings location country (Israel: one day Yom Tov). diaspora = also the second day of Yom Tov (Yom Tov Sheni shel Galuyot).'
+        type: choice
+        options: [auto, israel, diaspora]
+        default: auto
       prune:
         description: 'Also remove our rules for years no longer generated'
         type: boolean
@@ -48,5 +53,6 @@ jobs:
           EXIT: ${{ inputs.exit_minutes_after_sunset }}
           REENTER: ${{ inputs.reenter_minutes_after_sunset }}
           YOM_KIPPUR: ${{ inputs.include_yom_kippur }}
+          CALENDAR: ${{ inputs.calendar }}
           PRUNE: ${{ inputs.prune }}
         run: npx tsx scripts/install.ts

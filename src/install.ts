@@ -47,3 +47,16 @@ export function planInstall(existing: ExistingRule[], desired: Rule[], prune = f
 }
 
 export const isEmpty = (p: Plan): boolean => p.create.length + p.update.length + p.remove.length === 0;
+
+/**
+ * Which holiday calendar to use. `choice` is the workflow input: "auto" (default) follows the SmartThings
+ * location country (Israel = one day of Yom Tov), "israel" forces one day, "diaspora" forces the second
+ * day of Yom Tov (Yom Tov Sheni shel Galuyot) for people who keep it outside Israel.
+ */
+export function resolveIsrael(choice: string | undefined, countryCode: string | null | undefined): boolean {
+  const c = (choice ?? 'auto').trim().toLowerCase();
+  if (c === 'israel') return true;
+  if (c === 'diaspora') return false;
+  if (c === 'auto' || c === '') return countryCode === 'ISR' || countryCode === 'IL';
+  throw new Error(`calendar must be auto, israel or diaspora (got "${choice}")`);
+}
