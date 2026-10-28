@@ -80,9 +80,10 @@ export interface Entry {
 
 const key = (e: Entry): string => `${e.date} ${e.command} ${e.offset >= 0 ? '+' : ''}${e.offset}`;
 
-export function entriesOf(rules: Rule[], deviceId: string): { dated: Entry[]; weekly: string[] } {
+export function entriesOf(rules: Rule[], deviceId: string): { dated: Entry[]; weekly: string[]; skipped: number } {
   const dated: Entry[] = [];
   const weekly: string[] = [];
+  let skipped = 0;
   for (const rule of rules) {
     for (const a of rule.actions) {
       const sp = a.every.specific as unknown as {
@@ -93,10 +94,16 @@ export function entriesOf(rules: Rule[], deviceId: string): { dated: Entry[]; we
         reference: string;
         offset?: { value: { integer: number } };
       };
-      if (sp.reference !== 'Sunset') continue;
+      if (sp.reference !== 'Sunset') {
+        skipped++;
+        continue;
+      }
       for (const act of a.every.actions) {
         const cmd = act.command.commands.find((c) => c.capability === CAPABILITY);
-        if (!cmd || !act.command.devices.includes(deviceId)) continue;
+        if (!cmd || !act.command.devices.includes(deviceId)) {
+          skipped++;
+          continue;
+        }
         const offset = sp.offset?.value.integer ?? 0;
         if (sp.year && sp.month && sp.day) {
           const date = `${sp.year}-${String(sp.month).padStart(2, '0')}-${String(sp.day).padStart(2, '0')}`;
@@ -107,7 +114,7 @@ export function entriesOf(rules: Rule[], deviceId: string): { dated: Entry[]; we
       }
     }
   }
-  return { dated, weekly };
+  return { dated, weekly, skipped };
 }
 
 export interface Diff {
@@ -117,6 +124,8 @@ export interface Diff {
   extra: string[];
   /** Existing weekly rules. They fire regardless of holidays, so a weekly OFF can end a holiday early. */
   weeklyRules: string[];
+  /** Rules or actions that do not use a Sunset reference or this device and were ignored. */
+  skipped: number;
 }
 
 /** Dry run: compare desired actions against the existing rules. Pure, sends nothing. */
@@ -128,5 +137,6 @@ export function diffRules(existing: Rule[], desired: EveryAction[], deviceId: st
     missing: want.filter((k) => !haveKeys.includes(k)),
     extra: haveKeys.filter((k) => !want.includes(k)),
     weeklyRules: have.weekly,
+    skipped: have.skipped,
   };
 }
