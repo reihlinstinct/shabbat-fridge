@@ -66,6 +66,21 @@ All links were read on 2026-10-28. "Community" means forum posts, not official g
 - The 60-day inactivity rule for public repos comes from a third-party article, not the GitHub pages above:
   https://latchkey.dev/learn/github-actions/github-actions-schedule-disabled-60-days-inactivity
 
+## Free third-party options (checked 2026-10-28)
+
+- SmartThings CLI: browser login with Samsung account, or a PAT (24h); rules commands:
+  https://developer.smartthings.com/docs/sdks/cli and https://github.com/SmartThingsCommunity/smartthings-cli/blob/main/README.md
+  (example `smartthings rules:create -j -i file.json`: https://community.smartthings.com/t/how-to-write-api-rule/280637)
+- Home Assistant Jewish Calendar (Diaspora flag, `issur_melacha_in_effect`, candle lighting and havdalah sensors):
+  https://www.home-assistant.io/integrations/jewish_calendar
+- SmartThings and Home Assistant OAuth integration (no PAT): https://community.smartthings.com/t/new-integration-between-home-assistant-and-smartthings/296251
+- Home Assistant switch for `samsungce.sabbathMode` (commit in HA core, in the earlier search result):
+  https://git.2ari.ca/arian/home-assistant-core/commit/923300f4e7733a18100965407de1d7e96bf46381.diff
+- IFTTT free plan: https://help.ifttt.com/hc/en-us/articles/360052714673-Billing-FAQ and https://ifttt.com/plans
+- Make SmartThings app (PAT or OAuth credentials): https://apps.make.com/smartthings
+- Hubitat community driver for Samsung appliances via the SmartThings cloud:
+  https://community.hubitat.com/t/drivers-for-samsung-appliances-controlled-via-smartthings-cloud-api/94807
+
 ## Jewish calendar and sunset
 
 - `@hebcal/core` computes holidays (Israel flag `il`) and zmanim offline for any latitude, longitude, time zone.
