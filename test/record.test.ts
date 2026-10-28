@@ -1,0 +1,186 @@
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { gunzipSync } from 'node:zlib';
+import { describe, expect, it } from 'vitest';
+import { RECORD_CONTEXT, collectOnce, type Client } from '../src/collectrun.js';
+import { applyCursor, readCursor } from '../src/cursorfile.js';
+import { assemble, chunkSize, decryptChunk, generateKeyPair } from '../src/logcrypt.js';
+import { HOUR_MS, CodedError, eventsSince, fitEvents, nextCursor, type LogRecord, type RecordEvent } from '../src/record.js';
+import type { OAuthState } from '../src/oauth.js';
+import type { HistoryEvent } from '../src/smartthings.js';
+import { isState, newKey, open, seal } from '../src/statecrypt.js';
+
+const kp = generateKeyPair();
+const NOW = Date.parse('2026-10-28T12:30:00Z');
+const iso = (ms: number) => new Date(ms).toISOString();
+const ev = (time: string, value: unknown = 'closed', n = 0): HistoryEvent => ({ time, epoch: Date.parse(time), hash: n, componentId: 'main', capability: 'contactSensor', attribute: 'contact', value });
+const base = { v: 1 as const, takenAt: iso(NOW), place: { latitude: 1, longitude: 2, tzid: 'Asia/Jerusalem', countryCode: 'ISR' }, sabbath: null, rules: [] };
+
+describe('cursor', () => {
+  const e = (t: string): RecordEvent => ({ k: t, time: t });
+  it('floors to the hour and subtracts the 1 hour overlap', () => {
+    expect(nextCursor(undefined, [e('2026-10-28T10:47:12.000Z')], 0, false, NOW)).toBe('2026-10-28T09:00:00.000Z');
+  });
+  it('never moves back and keeps the old value with no events', () => {
+    expect(nextCursor('2026-10-28T11:00:00.000Z', [e('2026-10-28T10:47:12.000Z')], 0, false, NOW)).toBe('2026-10-28T11:00:00.000Z');
+    expect(nextCursor('2026-10-28T11:00:00.000Z', [], 0, false, NOW)).toBe('2026-10-28T11:00:00.000Z');
+    expect(nextCursor(undefined, [], 0, false, NOW)).toBeUndefined();
+  });
+  it('ignores future event times', () => {
+    expect(nextCursor(undefined, [e('2026-10-28T10:10:00.000Z'), e('2027-01-01T00:00:00.000Z')], 0, false, NOW)).toBe('2026-10-28T09:00:00.000Z');
+    expect(nextCursor('2026-10-28T08:00:00.000Z', [e('2027-01-01T00:00:00.000Z')], 0, false, NOW)).toBe('2026-10-28T08:00:00.000Z');
+  });
+  it('does not advance when the history was truncated', () => {
+    expect(nextCursor('2026-10-28T08:00:00.000Z', [e('2026-10-28T12:00:00.000Z')], 0, true, NOW)).toBe('2026-10-28T08:00:00.000Z');
+  });
+  it('throws fit-stall when events were left out and the cursor cannot advance', () => {
+    expect(() => nextCursor('2026-10-28T11:00:00.000Z', [e('2026-10-28T11:20:00.000Z')], 5, false, NOW)).toThrow(CodedError);
+    expect(() => nextCursor('2026-10-28T11:00:00.000Z', [], 5, false, NOW)).toThrow(/fit-stall/);
+    expect(nextCursor('2026-10-28T06:00:00.000Z', [e('2026-10-28T11:20:00.000Z')], 5, false, NOW)).toBe('2026-10-28T10:00:00.000Z');
+  });
+  it('rejects a bad event time (fail closed)', () => {
+    expect(() => nextCursor(undefined, [e('garbage')], 0, false, NOW)).toThrow(/bad-event-time/);
+    expect(() => eventsSince([ev('garbage')], undefined)).toThrow(/bad-event-time/);
+  });
+});
+
+describe('eventsSince and fit', () => {
+  it('keeps events strictly newer than the cursor, oldest first, each with its dedupe key', () => {
+    const out = eventsSince([ev('2026-10-28T10:00:00.000Z', 'open', 2), ev('2026-10-28T08:00:00.000Z', 'open', 1), ev('2026-10-28T09:00:00.000Z', 'closed', 3)], '2026-10-28T08:30:00.000Z');
+    expect(out.map((o) => o.time)).toEqual(['2026-10-28T09:00:00.000Z', '2026-10-28T10:00:00.000Z']);
+    expect(out[0]!.k).toContain('contactSensor');
+    expect(eventsSince([ev('2026-10-28T08:00:00.000Z')], undefined)).toHaveLength(1);
+  });
+  it('sends the oldest events that fit and leaves the rest', () => {
+    const many = Array.from({ length: 3000 }, (_, i) => ev(iso(NOW - (3000 - i) * 60000), Math.random().toString(36), i));
+    const wanted = eventsSince(many, undefined);
+    const fit = fitEvents(base, wanted);
+    expect(fit.length).toBeGreaterThan(10);
+    expect(fit.length).toBeLessThan(wanted.length);
+    expect(fit[0]).toEqual(wanted[0]);
+    expect(fitEvents(base, wanted.slice(0, 3))).toHaveLength(3);
+  });
+  it('throws record-too-big when even an empty record does not fit', () => {
+    const big = { ...base, rules: Array.from({ length: 5000 }, (_, i) => ({ id: Math.random().toString(36) + i, name: Math.random().toString(36), status: 'x', dateExecuted: 1, dateUpdated: 2 })) };
+    expect(() => fitEvents(big, [])).toThrow(/record-too-big/);
+  });
+});
+
+const client = (events: HistoryEvent[], truncated = false): Client => ({
+  locations: async () => [{ locationId: 'L1' }],
+  location: async () => ({ locationId: 'L1', latitude: 32.1, longitude: 34.8, timeZoneId: 'Asia/Jerusalem', countryCode: 'ISR' }),
+  devices: async () => [{ deviceId: 'D1', locationId: 'L1', components: [{ id: 'main', capabilities: [{ id: 'samsungce.sabbathMode' }] }] }] as never,
+  deviceStatus: async () => ({ components: { main: { 'samsungce.sabbathMode': { status: { value: 'off', timestamp: '2026-10-24T16:27:01Z' } } } } }),
+  rules: async () => [{ id: 'R1' }],
+  rule: async () => ({ id: 'R1', name: 'rule', status: 'Active', dateExecuted: 5, dateUpdated: 6, actions: ['SECRET-ACTIONS'] }),
+  deviceHistoryResult: async () => ({ events, truncated }),
+});
+const read = (chunk: Buffer): LogRecord => JSON.parse(gunzipSync(assemble([decryptChunk(chunk, kp.privateKey, RECORD_CONTEXT)])).toString('utf8')) as LogRecord;
+
+describe('collectOnce', () => {
+  const now = new Date(NOW);
+  it('returns exactly one fixed-size chunk with the slim record', async () => {
+    const r = await collectOnce({ client: client([ev('2026-10-28T10:47:12.000Z')]), publicKey: kp.publicKey, cursor: undefined, now });
+    expect(r.chunk.length).toBe(chunkSize());
+    const rec = read(r.chunk);
+    expect(rec.v).toBe(1);
+    expect(rec.sabbath).toEqual({ value: 'off', timestamp: '2026-10-24T16:27:01Z' });
+    expect(rec.rules).toEqual([{ id: 'R1', name: 'rule', status: 'Active', dateExecuted: 5, dateUpdated: 6 }]);
+    expect(rec.events).toHaveLength(1);
+    expect(JSON.stringify(rec)).not.toContain('SECRET-ACTIONS');
+    expect(JSON.stringify(rec)).not.toContain('"status":{"components"');
+    expect(r.cursor).toBe('2026-10-28T09:00:00.000Z');
+  });
+  it('an empty run still returns a chunk of the same size, and keeps the cursor', async () => {
+    const r = await collectOnce({ client: client([]), publicKey: kp.publicKey, cursor: '2026-10-28T09:00:00.000Z', now });
+    expect(r.chunk.length).toBe(chunkSize());
+    expect(r.cursor).toBe('2026-10-28T09:00:00.000Z');
+  });
+  it('only sends events after the cursor', async () => {
+    const r = await collectOnce({ client: client([ev('2026-10-28T08:00:00.000Z', 'a', 1), ev('2026-10-28T11:00:00.000Z', 'b', 2)]), publicKey: kp.publicKey, cursor: '2026-10-28T09:00:00.000Z', now });
+    expect(read(r.chunk).events.map((e) => e.time)).toEqual(['2026-10-28T11:00:00.000Z']);
+  });
+  it('writes its chunk but does not advance the cursor when history is truncated', async () => {
+    const r = await collectOnce({ client: client([ev('2026-10-28T11:30:00.000Z')], true), publicKey: kp.publicKey, cursor: '2026-10-28T06:00:00.000Z', now });
+    expect(r.chunk.length).toBe(chunkSize());
+    expect(r.cursor).toBe('2026-10-28T06:00:00.000Z');
+  });
+  it('is read-only: only the client reads are called', async () => {
+    const c = client([]);
+    const called: string[] = [];
+    const spy = Object.fromEntries(Object.entries(c).map(([k, f]) => [k, (...a: unknown[]) => { called.push(k); return (f as (...x: unknown[]) => unknown)(...a); }])) as unknown as Client;
+    await collectOnce({ client: spy, publicKey: kp.publicKey, cursor: undefined, now });
+    expect(new Set(called)).toEqual(new Set(['locations', 'location', 'devices', 'deviceStatus', 'rules', 'rule', 'deviceHistoryResult']));
+  });
+  it('fails with a coded error for an ambiguous location or device', async () => {
+    const c = client([]);
+    await expect(collectOnce({ client: { ...c, locations: async () => [{ locationId: 'A' }, { locationId: 'B' }] }, publicKey: kp.publicKey, cursor: undefined, now })).rejects.toThrow(/location-ambiguous/);
+    await expect(collectOnce({ client: { ...c, devices: async () => [] }, publicKey: kp.publicKey, cursor: undefined, now })).rejects.toThrow(/device-ambiguous/);
+  });
+});
+
+describe('state cursor', () => {
+  const STATE: OAuthState = { clientId: 'CID', clientSecret: 'CSECRET', refreshToken: 'RT-1', obtainedAt: '2026-10-28T00:00:00.000Z' };
+  const make = (st: OAuthState) => {
+    const key = newKey();
+    const file = join(mkdtempSync(join(tmpdir(), 'cur-')), 's.json');
+    writeFileSync(file, JSON.stringify(seal(st, key)));
+    return { key, file };
+  };
+  it('an old-format state without eventCursor still opens', () => {
+    const { key, file } = make(STATE);
+    expect(readCursor(file, key)).toBeUndefined();
+  });
+  it('validates the cursor format on open', () => {
+    expect(isState({ ...STATE, eventCursor: '2026-10-28T09:00:00.000Z' })).toBe(true);
+    for (const bad of ['yesterday', '2026-10-28', 42, '2026-13-45T00:00:00Z', '2026-10-28T09:00:00+02:00']) expect(isState({ ...STATE, eventCursor: bad })).toBe(false);
+  });
+  it('seal uses a fresh random nonce: sealing the same state twice gives different bytes', () => {
+    const key = newKey();
+    const a = JSON.stringify(seal(STATE, key));
+    const b = JSON.stringify(seal(STATE, key));
+    expect(a).not.toBe(b);
+  });
+  it('applyCursor writes new ciphertext even when the cursor is unchanged, and keeps every other field', () => {
+    const { key, file } = make({ ...STATE, eventCursor: '2026-10-28T09:00:00.000Z' });
+    const before = readFileSync(file, 'utf8');
+    applyCursor(file, key, '2026-10-28T09:00:00.000Z');
+    const after = readFileSync(file, 'utf8');
+    expect(after).not.toBe(before);
+    expect(open(JSON.parse(after), key)).toEqual({ ...STATE, eventCursor: '2026-10-28T09:00:00.000Z' });
+  });
+  it('applyCursor sets and keeps the cursor, and fails closed on a bad write', () => {
+    const { key, file } = make(STATE);
+    applyCursor(file, key, '2026-10-28T10:00:00.000Z');
+    expect(readCursor(file, key)).toBe('2026-10-28T10:00:00.000Z');
+    applyCursor(file, key, undefined);
+    expect(readCursor(file, key)).toBe('2026-10-28T10:00:00.000Z');
+    const keep = readFileSync(file, 'utf8');
+    expect(() => applyCursor(file, key, '2026-10-28T11:00:00.000Z', (p) => writeFileSync(p, 'not json'))).toThrow(/read back/);
+    expect(readFileSync(file, 'utf8')).toBe(keep);
+  });
+  it('hour constant is one hour', () => expect(HOUR_MS).toBe(3600000));
+});
+
+import { spawnSync } from 'node:child_process';
+describe('collector scripts print fixed text only', () => {
+  const run = (script: string, env: Record<string, string>) => spawnSync('npx', ['--no-install', 'tsx', script], { env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', ...env }, encoding: 'utf8' });
+  it('collect-encrypted names a missing variable by code only', () => {
+    const r = run('scripts/collect-encrypted.ts', {});
+    expect(r.status).toBe(1);
+    expect(r.stdout.trim()).toBe('collector failed: missing-st-token');
+  });
+  it('an internal error prints the fixed code and never the secret-looking inputs', () => {
+    const r = run('scripts/collect-encrypted.ts', { ST_TOKEN: 'CANARY-TOKEN', STATE_FILE: '/nonexistent/CANARY-PATH', STATE_KEY: 'CANARY-KEY', CHUNK_DIR: '/tmp', CURSOR_OUT: '/tmp/x' });
+    expect(r.status).toBe(1);
+    expect(r.stdout.trim()).toBe('collector failed: internal');
+    expect(r.stdout + r.stderr).not.toContain('CANARY');
+  });
+  it('apply-cursor prints fixed text on failure', () => {
+    const r = run('scripts/apply-cursor.ts', { STATE_FILE: '/nonexistent/CANARY', STATE_KEY: 'CANARY', CURSOR_OUT: '/nonexistent/CANARY' });
+    expect(r.status).toBe(1);
+    expect(r.stdout.trim()).toBe('apply-cursor failed');
+    expect(r.stdout + r.stderr).not.toContain('CANARY');
+  });
+});
