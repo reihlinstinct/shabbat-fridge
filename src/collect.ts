@@ -2,7 +2,7 @@ import type { HistoryEvent } from './smartthings.js';
 
 /** Identity of one history event. Includes capability, attribute and value so distinct events never collide. */
 export function eventKey(e: HistoryEvent): string {
-  return [e.epoch ?? e.time, e.hash ?? '', e.capability ?? '', e.attribute ?? '', JSON.stringify(e.value ?? null)].join('|');
+  return [e.epoch ?? e.time, e.hash ?? '', e.componentId ?? e.component ?? '', e.capability ?? '', e.attribute ?? '', JSON.stringify(e.value ?? null)].join('|');
 }
 
 /** Lines to append for events not seen before (also dedupes inside the batch). `seen` is updated. */
@@ -12,7 +12,7 @@ export function newEventLines(seen: Set<string>, events: HistoryEvent[]): Array<
     const k = eventKey(e);
     if (seen.has(k)) continue;
     seen.add(k);
-    out.push({ month: String(e.time).slice(0, 7), line: JSON.stringify({ k, time: e.time, capability: e.capability, attribute: e.attribute, value: e.value }) });
+    out.push({ month: String(e.time).slice(0, 7), line: JSON.stringify({ k, time: e.time, component: e.componentId ?? e.component, capability: e.capability, attribute: e.attribute, value: e.value }) });
   }
   return out;
 }

@@ -8,6 +8,8 @@ describe('event dedupe', () => {
   it('same epoch and hash but a different capability, attribute or value are distinct events', () => {
     const keys = new Set([ev({}), ev({ value: 'on' }), ev({ attribute: 'other' }), ev({ capability: 'contactSensor' })].map(eventKey));
     expect(keys.size).toBe(4);
+    expect(eventKey(ev({ component: 'main' }))).not.toBe(eventKey(ev({ component: 'cooler' })));
+    expect(newEventLines(new Set(), [ev({ component: 'cooler' })])[0]!.line).toContain('"component":"cooler"');
   });
   it('only new events are returned, duplicates inside the batch are dropped, and re-runs add nothing', () => {
     const seen = new Set<string>();
@@ -61,5 +63,20 @@ describe('deviceHistory pagination', () => {
   it('respects maxPages', async () => {
     const fetcher = (async () => new Response(JSON.stringify({ items: [{ time: 'x' }], _links: { next: { href: 'https://api.smartthings.com/history/devices?p=1' } } }), { status: 200 })) as typeof fetch;
     expect((await new SmartThings('t', fetcher).deviceHistory('L', 'D', 3))).toHaveLength(3);
+  });
+});
+
+describe('error hygiene', () => {
+  it('a 200 response that is not JSON never leaks its body in the error', async () => {
+    const canary = 'CANARY-TOKEN-9f3a';
+    const fetcher = (async () => new Response(`${canary}{not json`, { status: 200 })) as typeof fetch;
+    const st = new SmartThings('t', fetcher);
+    for (const run of [() => st.locations(), () => st.deviceHistory('L', 'D'), () => st.deviceStatus('D')]) {
+      try { await run(); throw new Error('should have thrown'); } catch (e) { expect(String(e)).not.toContain(canary); expect(String(e)).toMatch(/non-JSON response/); }
+    }
+  });
+  it('an HTTP error never includes the body either', async () => {
+    const fetcher = (async () => new Response('CANARY-BODY', { status: 500 })) as typeof fetch;
+    await expect(new SmartThings('t', fetcher).locations()).rejects.toThrow(/HTTP 500$/);
   });
 });

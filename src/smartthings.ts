@@ -27,6 +27,8 @@ export interface HistoryEvent {
   time: string;
   epoch?: number;
   hash?: number;
+  component?: string;
+  componentId?: string;
   capability?: string;
   attribute?: string;
   value?: unknown;
@@ -56,7 +58,12 @@ export class SmartThings {
       throw new Error(`SmartThings ${method} ${path.split('?')[0]} failed with HTTP ${res.status}`);
     }
     const text = await res.text();
-    return (text ? JSON.parse(text) : {}) as T;
+    try {
+      return (text ? JSON.parse(text) : {}) as T;
+    } catch {
+      // Never let the parser quote the body: it can hold a token or other private data.
+      throw new Error(`SmartThings ${method} ${path.split('?')[0]} returned a non-JSON response (HTTP ${res.status})`);
+    }
   }
 
   async locations(): Promise<StLocation[]> {
