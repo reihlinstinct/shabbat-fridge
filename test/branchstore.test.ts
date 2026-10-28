@@ -141,3 +141,93 @@ describe('quiet and safe', () => {
     expect(sh(work, 'status', '--porcelain')).toBe('');
   });
 });
+
+import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { CodedError } from '../src/record.js';
+
+const priv = (s: BranchStore): { repoDir: string } => (s as unknown as { o: { repoDir: string } }).o;
+
+describe('review hardening', () => {
+  it('the auth header never appears in git argv (env config only) nor in errors', () => {
+    const root = mkdtempSync(join(tmpdir(), 'shim-'));
+    const real = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+    const logf = join(root, 'argv.log');
+    const envf = join(root, 'env.log');
+    writeFileSync(join(root, 'git'), `#!/bin/sh\necho "$@" >> ${logf}\nenv | grep -c CANARY-HEADER >> ${envf}\nexec ${real} "$@"\n`);
+    chmodSync(join(root, 'git'), 0o755);
+    const oldPath = process.env.PATH;
+    process.env.PATH = `${root}:${oldPath}`;
+    try {
+      const { remote, work } = setup();
+      const store = new BranchStore({ repoDir: work, remote, extraHeader: 'Authorization: basic CANARY-HEADER' });
+      const sha = store.writeState('x', null);
+      store.writeState('y', sha);
+      store.writeLogs([{ path: name('a'), data: Buffer.from('x') }]);
+      const argv = readFileSync(logf, 'utf8');
+      expect(argv.length).toBeGreaterThan(50);
+      expect(argv).not.toContain('CANARY-HEADER');
+      expect(argv).not.toContain('extraheader');
+      expect(readFileSync(envf, 'utf8').split('\n').filter(Boolean).some((n) => Number(n) > 0)).toBe(true);
+    } finally {
+      process.env.PATH = oldPath;
+    }
+  });
+  it('rejects option-like and non-trusted remotes and never runs a helper', () => {
+    const { work, root } = setup();
+    const marker = join(root, 'pwned');
+    const bad = [`--upload-pack=touch ${marker}`, '-x', `ext::sh -c touch% ${marker}`, 'http://example.com/r.git', 'git://example.com/r.git', 'ssh://example.com/r.git', 'file:///tmp/x', 'relative/path', 'https://example.com/../x', 'https://-evil/x', '', ' /tmp/x'];
+    for (const remote of bad) expect(() => new BranchStore({ repoDir: work, remote })).toThrow(/bad-remote/);
+    for (const h of ['-x', 'a\nb', 'é']) expect(() => new BranchStore({ repoDir: work, remote: '/tmp/ok', extraHeader: h })).toThrow(/bad-remote/);
+    expect(existsSync(marker)).toBe(false);
+    expect(() => new BranchStore({ repoDir: work, remote: 'https://github.com/reihlinstinct/shabbat-fridge.git' })).not.toThrow();
+  });
+  it('filesystem failures become a fixed code with no native message or path', () => {
+    const { store } = setup();
+    const old = process.env.TMPDIR;
+    process.env.TMPDIR = '/nonexistent/CANARY-TMP';
+    try {
+      let e1: unknown;
+      try { store.writeState('x', null); } catch (e) { e1 = e; }
+      expect(e1).toBeInstanceOf(CodedError);
+      const text = String((e1 as Error).message) + JSON.stringify(e1, Object.getOwnPropertyNames(e1 as object)) + String((e1 as { cause?: unknown }).cause ?? '');
+      expect(text).toContain('push-failed');
+      expect(text).not.toContain('CANARY');
+      expect(text).not.toContain('ENOENT');
+      expect((e1 as { cause?: unknown }).cause).toBeUndefined();
+      expect(() => store.writeLogs([{ path: name('a'), data: Buffer.from('x') }])).toThrow(/^push-failed$/);
+    } finally {
+      if (old === undefined) delete process.env.TMPDIR;
+      else process.env.TMPDIR = old;
+    }
+  });
+  it('a failing operation keeps its own error code (cleanup does not replace it) and leaves no temp dirs', () => {
+    const { store } = setup();
+    const before = execFileSync('sh', ['-c', `ls ${tmpdir()} | grep -c '^bs-' || true`], { encoding: 'utf8' }).trim();
+    expect(() => store.writeState('x', '1'.repeat(40))).toThrow(/^push-failed$/);
+    const after = execFileSync('sh', ['-c', `ls ${tmpdir()} | grep -c '^bs-' || true`], { encoding: 'utf8' }).trim();
+    expect(after).toBe(before);
+  });
+  it('rejects duplicate paths in one batch before touching the remote', () => {
+    const { remote, store } = setup();
+    expect(() => store.writeLogs([{ path: name('a'), data: Buffer.from('one') }, { path: name('a'), data: Buffer.from('two') }])).toThrow(/push-failed/);
+    expect(sh(remote, 'branch', '--list')).toBe('');
+  });
+  it('first logs creation uses an expected-absent lease: a rival that creates it first is merged on the retry, not overwritten', () => {
+    const { remote, store } = setup();
+    const rivalDir = join(mkdtempSync(join(tmpdir(), 'bst5-')), 'w');
+    execFileSync('git', ['init', '-q', rivalDir]);
+    const rival = new BranchStore({ repoDir: rivalDir, remote });
+    let once = true;
+    const mine = new BranchStore({ repoDir: priv(store).repoDir, remote, beforePush: () => { if (once) { once = false; rival.writeLogs([{ path: name('c'), data: Buffer.from('rival') }]); } } });
+    mine.writeLogs([{ path: name('b'), data: Buffer.from('mine') }]);
+    expect(files(remote, 'logs').sort()).toEqual([name('b'), name('c')]);
+    expect(log(remote, 'logs')).toHaveLength(2);
+  });
+  it('subprocess run with canaries everywhere prints nothing to stdout or stderr', () => {
+    const r = spawnSync('npx', ['--no-install', 'tsx', 'test/fixtures/store-run.ts'], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '' } });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toBe('');
+    expect(r.stderr).toBe('');
+  });
+});
