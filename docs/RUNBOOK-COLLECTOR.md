@@ -22,7 +22,11 @@ Signs: a run fails at the rotate step (fixed text `rotate failed: oauth-failed`)
 
 ## Rotate `STATE_KEY` (yearly, or after any suspected leak)
 1. Generate a new random key (for example `openssl rand -base64 32`).
-2. Re-seal the state with the new key and write it to the `state` branch before changing the secret, so no run sees a mismatch.
+2. Re-seal the state with the new key and write it to the `state` branch, then change the secret right away (step 3). A run between the two steps fails closed with a fixed error and the next run recovers, so do both within a few minutes, away from the top of the hour. On a machine with Node and a clone of the repository, the old and new keys in environment variables only (never in arguments):
+   - `GH_TOKEN=<token that can push to the state branch> STATE_FILE=/tmp/oauth.enc.json STATE_SHA_FILE=/tmp/oauth.sha npx tsx scripts/store.ts read-state`
+   - `STATE_FILE=/tmp/oauth.enc.json OLD_STATE_KEY=<old> NEW_STATE_KEY=<new> npx tsx scripts/reseal-state.ts` (prints `state re-sealed`; the file is replaced only after a read-back check)
+   - `GH_TOKEN=<same> STATE_FILE=/tmp/oauth.enc.json STATE_SHA_FILE=/tmp/oauth.sha npx tsx scripts/store.ts write-state`
+   - delete `/tmp/oauth.enc.json` and `/tmp/oauth.sha`.
 3. Update the secret `STATE_KEY` in the `collector` Environment.
 4. After a suspected leak also follow the compromise playbook in docs/ENCRYPTED-LOGS.md (delete and recreate the OAuth app, force-push `state`).
 
