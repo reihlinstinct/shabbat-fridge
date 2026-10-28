@@ -28,7 +28,7 @@ export function insideWorktree(path: string): boolean {
 }
 
 /** realpath of the longest existing prefix, with the missing tail appended. */
-function realish(path: string): string {
+export function realish(path: string): string {
   let p = resolve(path);
   const tail: string[] = [];
   for (;;) {

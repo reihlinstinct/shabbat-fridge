@@ -6,7 +6,7 @@
  */
 import { closeSync, openSync, writeSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { decryptDir, insideWorktree, prepareOutDir, readKeyFile, refuseIfCi, writeLayout } from '../src/decryptlogs.js';
+import { decryptDir, insideWorktree, prepareOutDir, realish, readKeyFile, refuseIfCi, writeLayout } from '../src/decryptlogs.js';
 import { generateKeyPair, publicKeyOf } from '../src/logcrypt.js';
 import { CodedError } from '../src/record.js';
 
@@ -16,7 +16,7 @@ try {
   const keyPath = process.env.LOGS_PRIVATE_KEY_FILE || '';
   if (cmd === 'keygen') {
     if (!keyPath) throw new CodedError('missing-key-file');
-    if (insideWorktree(dirname(resolve(keyPath)))) throw new CodedError('key-file-in-worktree');
+    if (insideWorktree(realish(dirname(resolve(keyPath))))) throw new CodedError('key-file-in-worktree');
     const { publicKey, privateKey } = generateKeyPair();
     const fd = openSync(keyPath, 'wx', 0o600);
     try {

@@ -135,4 +135,29 @@ describe('scripts/decrypt-logs.ts', () => {
     expect(w.stdout.trim()).toBe('decrypt-logs failed: key-file-in-worktree');
     expect(existsSync(join(root, 'repo/k'))).toBe(false);
   });
+  it('resolves symlinked parents: keygen and OUT_DIR through an outside alias into a worktree are refused', () => {
+    const root = mkdtempSync(join(tmpdir(), 'sl-'));
+    mkdirSync(join(root, 'repo/sub'), { recursive: true });
+    execFileSync('git', ['init', '-q', join(root, 'repo')]);
+    symlinkSync(join(root, 'repo/sub'), join(root, 'alias'));
+    const w = run(['keygen'], { LOGS_PRIVATE_KEY_FILE: join(root, 'alias/private') });
+    expect(w.stdout.trim()).toBe('decrypt-logs failed: key-file-in-worktree');
+    expect(existsSync(join(root, 'repo/sub/private'))).toBe(false);
+    const w2 = run(['keygen'], { LOGS_PRIVATE_KEY_FILE: join(root, 'alias/new/private') });
+    expect(w2.stdout.trim()).toBe('decrypt-logs failed: key-file-in-worktree');
+    const t = tree();
+    t.put(seal(rec('2026-10-28T10:00:00.000Z', [])));
+    const r = run(['decrypt'], { LOGS_DIR: t.logs, OUT_DIR: join(root, 'alias/out'), LOGS_PRIVATE_KEY_FILE: t.keyFile });
+    expect(r.stdout.trim()).toBe('decrypt-logs failed: out-in-worktree');
+    expect(existsSync(join(root, 'repo/sub/out'))).toBe(false);
+    // a symlinked key file parent that points into a worktree is refused for decrypt too
+    symlinkSync(join(root, 'repo/sub'), join(root, 'alias2'));
+    writeFileSync(join(root, 'repo/sub/key'), keys.privateKey, { mode: 0o600 });
+    const k = run(['decrypt'], { LOGS_DIR: t.logs, OUT_DIR: t.out, LOGS_PRIVATE_KEY_FILE: join(root, 'alias2/key') });
+    expect(k.stdout.trim()).toBe('decrypt-logs failed: key-file-in-worktree');
+    // LOGS_DIR reached through a symlink: OUT_DIR inside the real LOGS_DIR is still refused
+    symlinkSync(t.logs, join(root, 'logalias'));
+    const l = run(['decrypt'], { LOGS_DIR: join(root, 'logalias'), OUT_DIR: join(t.logs, 'o'), LOGS_PRIVATE_KEY_FILE: t.keyFile });
+    expect(l.stdout.trim()).toBe('decrypt-logs failed: out-in-logs-dir');
+  });
 });
