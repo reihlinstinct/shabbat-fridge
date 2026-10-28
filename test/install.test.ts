@@ -72,3 +72,26 @@ describe('SmartThings client', () => {
     expect(sabbathDevices(devs, 'L').map((d) => d.deviceId)).toEqual(['1']);
   });
 });
+
+import { resolveIsrael } from '../src/install.js';
+describe('resolveIsrael (calendar choice)', () => {
+  it('auto follows the location country', () => {
+    expect(resolveIsrael('auto', 'ISR')).toBe(true);
+    expect(resolveIsrael(undefined, 'IL')).toBe(true);
+    expect(resolveIsrael('auto', 'USA')).toBe(false);
+  });
+  it('diaspora forces two-day Yom Tov even in Israel; israel forces one day abroad', () => {
+    expect(resolveIsrael('diaspora', 'ISR')).toBe(false);
+    expect(resolveIsrael('israel', 'USA')).toBe(true);
+  });
+  it('auto fails closed when the country is missing or unrecognised', () => {
+    expect(() => resolveIsrael('auto', null)).toThrow(/israel or diaspora/);
+    expect(() => resolveIsrael('auto', undefined)).toThrow();
+    expect(() => resolveIsrael('auto', '')).toThrow();
+    expect(() => resolveIsrael('auto', 'Israel!')).toThrow();
+    expect(resolveIsrael('diaspora', null)).toBe(false);
+  });
+  it('rejects unknown values', () => {
+    expect(() => resolveIsrael('both', 'ISR')).toThrow();
+  });
+});

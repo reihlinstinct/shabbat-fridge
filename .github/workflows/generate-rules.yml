@@ -10,10 +10,11 @@ on:
       timezone:
         description: 'IANA time zone'
         default: 'Asia/Jerusalem'
-      israel:
-        description: 'Israel calendar (one day Yom Tov). Untick for Diaspora.'
-        type: boolean
-        default: true
+      calendar:
+        description: 'israel = one day of Yom Tov. diaspora = also the second day (Yom Tov Sheni shel Galuyot).'
+        type: choice
+        options: [israel, diaspora]
+        default: israel
       years:
         default: '10'
       entry_minutes_before_sunset:
@@ -43,7 +44,7 @@ jobs:
           LAT: ${{ inputs.latitude }}
           LON: ${{ inputs.longitude }}
           TZ: ${{ inputs.timezone }}
-          ISRAEL: ${{ inputs.israel }}
+          ISRAEL: ${{ inputs.calendar == 'israel' }}
           YEARS: ${{ inputs.years }}
           ENTRY: ${{ inputs.entry_minutes_before_sunset }}
           EXIT: ${{ inputs.exit_minutes_after_sunset }}

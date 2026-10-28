@@ -58,7 +58,7 @@ The rules already installed keep running on Samsung's servers after the token is
 calendar core, cross-checks every Yom Tov day against the public Hebcal web API (it fails if they disagree), and uploads
 an artifact `holiday-rules` with `holiday-rules.json` (a placeholder device id: `YOUR-DEVICE-ID`) and an annotated
 `holiday-schedule.md` (Hebrew and English holiday names, Hebrew dates, each ON/OFF with its sunset offset).
-Defaults are Jerusalem and the Israel calendar; change latitude, longitude, time zone or untick Israel for another place.
+Defaults are Jerusalem and the Israel calendar; change latitude, longitude, time zone or choose calendar = diaspora for another place.
 
 The install workflow does not use this artifact: it recomputes the same rules itself, reading the location (country, time zone,
 coordinates) and the fridge from your SmartThings account, and runs the same Hebcal cross-check before writing anything.
@@ -67,6 +67,15 @@ coordinates) and the fridge from your SmartThings account, and runs the same Heb
 Rolling horizon: run the install workflow again any time (for example once a year). It extends the 10 years from the day it
 runs, replaces only our `shabbat-fridge holidays YYYY` rules, and with **Prune** also removes our rules for past years.
 
+## Second day of Yom Tov outside Israel / יום טוב שני של גלויות
+
+Both workflows have a `calendar` input. Default for **Install** is `auto`: Israel (one day of Yom Tov) when the SmartThings
+location country is Israel, Diaspora otherwise. `auto` stops with an error when SmartThings gives no recognisable country; then choose `israel` or `diaspora` yourself. Choose `diaspora` to add the second day of Yom Tov (Yom Tov Sheni shel
+Galuyot), for example when you keep it while visiting abroad, or when your location is set outside Israel but you want it
+explicitly. Choose `israel` to force one day. For **Generate** the default is `israel`; `diaspora` gives two days.
+The Hebcal cross-check uses the same choice (`i=on` for Israel, `i=off` for Diaspora). Dates follow the Hebrew calendar rules in
+the calendar core; known dates are in the tests (for example Diaspora 2026-10-03 and 2026-10-04).
+ברירת המחדל: ישראל, יום טוב אחד. לבחירת יום טוב שני: calendar = diaspora.
 ## After a real run / אחרי הרצה אמיתית
 
 Run the workflow once more with the default dry run. The plan should say `unchanged` for every rule (create 0, update 0, remove 0).
@@ -78,3 +87,14 @@ The time zone stays explicit: it comes from your SmartThings location, never fro
 The +100 re-ON after a Saturday that is followed by a holiday assumes the weekly Saturday OFF rule fires at +90 minutes or earlier.
 If your weekly OFF is later than +100 (or removed), the re-ON would fire before it and the OFF would then turn Sabbath mode off during the holiday.
 Keep the weekly OFF at +90 or earlier, or lower re-ON accordingly.
+
+## How the dates are tested / איך התאריכים נבדקים
+
+`test/fixtures/hebcal-yomtov.json` pins every Yom Tov day for 2026-2126 (Israel and Diaspora) from the Hebcal web API. The tests
+(`test/hundred-years.test.ts`) check our calendar against it day by day for 100 years, then check that the generated rules equal
+entries derived from those dates by plain day arithmetic: eve ON at -60, OFF at +90, no rule for a Saturday-only holiday, and a +100
+re-ON for a Saturday inside a block. A seeded random sample and one holiday per year for 2027-2036 are checked in the JSON as well.
+The workflow **Check Hebcal fixture** (manual, and every January 1; GitHub may disable scheduled workflows after 60 days without repository activity, so the schedule is best effort and a manual run is the dependable path) re-fetches the data and fails if Hebcal changed;
+refresh with `npx tsx scripts/refresh-fixture.ts`.
+Limit: Hebcal and our calendar core both use the same Hebrew calendar rules (the standard fixed calendar), so this guards against
+bugs and drift, not against a different halachic custom.
