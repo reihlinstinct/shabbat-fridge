@@ -3,6 +3,7 @@
  * Pure over a directory and a key: errors carry fixed codes, never key bytes, paths of keys or decrypted text.
  */
 import { chmodSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { createPrivateKey } from 'node:crypto';
 import { dirname, join, resolve, sep } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { RECORD_CONTEXT } from './collectrun.js';
@@ -80,7 +81,21 @@ export function readKeyFile(path: string): string {
   if (st.isSymbolicLink() || !st.isFile()) throw new CodedError('key-file-not-regular');
   if ((st.mode & 0o077) !== 0) throw new CodedError('key-file-mode');
   if (insideWorktree(realish(path))) throw new CodedError('key-file-in-worktree');
-  return readFileSync(path, 'utf8').trim();
+  return keyText(readFileSync(path, 'utf8'));
+}
+
+/** The key as base64 raw 32 bytes. Accepts that form, or an unencrypted PKCS#8 PEM X25519 key (what `openssl genpkey -algorithm X25519` writes). */
+export function keyText(text: string): string {
+  const t = text.trim();
+  if (!t.startsWith('-----BEGIN')) return t;
+  try {
+    if (!t.startsWith('-----BEGIN PRIVATE KEY-----')) throw new Error('kind');
+    const k = createPrivateKey({ key: t, format: 'pem' });
+    if (k.asymmetricKeyType !== 'x25519') throw new Error('type');
+    return Buffer.from(k.export({ format: 'der', type: 'pkcs8' }).subarray(-32)).toString('base64');
+  } catch {
+    throw new CodedError('key-file-invalid');
+  }
 }
 
 /** Validates OUT_DIR against LOGS_DIR and creates it 0700. */
