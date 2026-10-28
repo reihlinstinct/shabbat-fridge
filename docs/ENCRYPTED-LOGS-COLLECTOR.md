@@ -1,33 +1,66 @@
 # Design (item c): the public-repo collector, state branch and decrypt script
 
-Status: proposal. Builds on docs/ENCRYPTED-LOGS.md (merged) and src/logcrypt.ts (merged). No code, workflow, key or secret exists yet for this item. Nothing runs until the code PRs are reviewed and the owner approves; item (d) sets up keys and secrets.
+Status: proposal. Builds on docs/ENCRYPTED-LOGS.md (merged) and src/logcrypt.ts (merged). No code, workflow, key or secret exists yet for this item. Nothing runs until the code PRs are reviewed and the owner approves. Item (d) sets up keys, the Environment and secrets.
+
+Item (c) is split into four PRs, each with its own issue, independent review and owner OK: **c1** record and cursor, **c2** branch store, **c3** workflow, keepalive and workflow lint test, **c4** decrypt script. (This replaces the single "(c)" in item 11 of the main design, which is updated to match.)
 
 ## Problem this item must solve
-The old collector deduplicated history events by reading its earlier files. In the public repo the workflow can read no old logs (it holds only the public key). So the new collector must be stateless with respect to logs, and keep any cursor in the sealed OAuth state, which it can read.
+The old collector deduplicated history events by reading its earlier files. In the public repo the workflow can read no old logs, because it holds only the public key. So the new collector is stateless for logs and keeps one small cursor in the sealed OAuth state, which it can read.
 
-## Pieces (one PR each, in this order)
-1. **Slim record and cursor (`src/record.ts`, `scripts/collect-encrypted.ts`).**
-   - One run builds one JSON record: `{ v: 1, takenAt, place, sabbath, rules, events }`. The raw `status` blob is dropped (it is about 50 KB of mostly irrelevant data; `analyze` reads only `place`, `sabbath` and the snapshot times). `rules` keeps id, name, status, dateExecuted, dateUpdated.
-   - `events` holds only history events newer than `eventCursor`, minus a 1 hour overlap. Duplicates from the overlap are removed later by the existing event key on decrypt.
-   - `eventCursor` (ISO time of the newest event seen, or absent on the first run, which then takes the whole ~7-day history) is an optional field of the sealed OAuth state (validated as an ISO timestamp on open). It advances only after the chunk is pushed. If that second state write fails, the next run re-sends the overlap and nothing is lost.
-   - The record is gzipped and encrypted with `sealJson`, context `shabbat-fridge/logs/record/v1`, bucket 16 KiB (a 50 KB status gzips to 7 KB, so the slim record plus one week of events should fit one chunk; if the first run spills, that is a single visible step on day one only). It is written to `chunks/<chunkFileName()>.bin`, one file per chunk.
-   - Console output is fixed text only ("chunk written"). It never prints event counts, sabbath state, ids or timestamps from the data, because the run log is public and a count would leak door activity.
-2. **State branch handling (`src/branchstore.ts`).**
-   - `state` is an orphan branch with one file, `state/oauth.enc.json`. Each write creates a new parentless commit and pushes with `--force-with-lease=state:<sha we read>`, so a concurrent writer fails instead of overwriting. As in the main design, this keeps the branch small but does not erase old commits.
-   - `logs` is a normal branch that only receives new files (fast-forward pushes with pull --rebase retries). No force pushes there.
-   - Tested against a local bare repository: first create, update, lease conflict, rebase retry, no stray files, fixed commit messages.
-3. **Workflow (`.github/workflows/collector.yml`) and keepalive (`keepalive.yml`).** As in the main design: triggers `schedule` (hourly) and `workflow_dispatch` with no inputs; a first step that asserts repository, event name and `refs/heads/main` before any secret exists in the environment; one concurrency group `collector`, `cancel-in-progress: false`; per-job permissions (collector: `contents: write`, `issues: write`; keepalive: `actions: write` only); environment `collector` for `STATE_KEY`; actions pinned by full SHA; `persist-credentials: false` on checkout and the push done in one step with the token passed via `http.extraheader`; no `set -x`, no `env`, no step debug dependence; artifacts of ciphertext with `retention-days: 1`; failure alert issue with the run link and no data. Order inside the run: guard, checkout, install (`npm ci --ignore-scripts`), fetch `state` and `logs`, rotate (token first), push state, upload the ciphertext artifact, collect and write the chunk, push `logs`, update the cursor (second state push). The collector reads the public key from `config/logs.pub` and validates it is 32 bytes.
-   - A repository test (`test/workflows.test.ts`) parses every workflow file and fails the build if: a `pull_request*`, `workflow_run` or `issue*` trigger appears; an action is not pinned to a 40-hex SHA; a job lacks an explicit `permissions` block; the collector job has no concurrency group or environment; `set -x`, `printenv` or a bare `env` appears; an artifact has no `retention-days: 1`.
-4. **Decrypt script (`scripts/decrypt-logs.ts`).**
-   - Input: `LOGS_DIR` (a checkout of the `logs` branch), `OUT_DIR`, and `LOGS_PRIVATE_KEY_FILE` (a path, never the key value in an environment variable or argument).
-   - It refuses to run when `GITHUB_ACTIONS` is set, so the private key never reaches CI. It refuses an `OUT_DIR` inside the repository working tree or any git worktree.
-   - It decrypts every chunk, groups spilled chunks, dedupes events by their key, and writes the same `snapshots/YYYY-MM/*.json` and `events/YYYY-MM.ndjson` layout, so `scripts/analyze.ts` works unchanged. A chunk that does not decrypt is counted and the exit code is non-zero; nothing is dropped silently. Output is counts only, no data.
-   - Tests: round trip, spill, duplicate events removed, tampered and foreign-key chunks counted, refusal under CI, refusal for an output inside a git tree, canary never printed.
+## c1. Record, cursor, fixed-size chunks
+- One run builds one JSON record: `{ v: 1, takenAt, place, sabbath, rules, events }`. The raw `status` blob is dropped (about 50 KB, not read by `analyze`, which uses `place`, `sabbath` and snapshot times). `rules` keeps id, name, status, dateExecuted and dateUpdated. `events` are the same line objects as today, each with its key `k`.
+- **Dedupe key.** `k = epoch|hash|component|capability|attribute|JSON(value)` (`eventKey` in src/collect.ts). It is computed from the event itself, so it survives the slim record. Decrypt dedupes on `k`.
+- **Cursor.** `eventCursor` is an optional ISO field of the sealed OAuth state. Old-format states without it still open (tested). Rules:
+  - Candidate = floor to the hour of the newest event time included in the chunk that was pushed, minus a 1 hour overlap. New cursor = max(old cursor, candidate), so it never moves back. Event times more than 5 minutes in the future are ignored. With no new events the old value is kept.
+  - The overlap covers history that SmartThings lists late (observed lag is under minutes; the overlap is a margin, not a measured bound). Duplicates are removed on decrypt.
+  - **Truncation.** `deviceHistory` pages newest first and stops at 40 pages. It will report `truncated: true` when the page limit is hit while a next link remains. A truncated run still writes its chunk but does not advance the cursor, and it raises a warning.
+  - **Long outages.** History keeps about 7 days. If the collector is down longer, events older than the window are lost for good. The decrypt report shows the gap, and the dead-man signal below fires first.
+  - **Fit rule (no spills in scheduled runs).** Every scheduled chunk is exactly one 16 KiB bucket. If the events do not fit, the oldest events that fit are sent and the cursor moves only to the last one included, so a backlog drains at one chunk per hour. If the candidate would not advance while events were left out, the run fails loudly instead of stalling. The first backfill is a manual dispatch run the same way. No scheduled run ever produces a different size, so there is no size step to see. (Power-of-two bucket steps were considered and rejected: they would add a visible step.)
+- **Cursor leak, stated accurately.** The cursor is sealed with `STATE_KEY`. Orphan-branch states stay fetchable in public, so if `STATE_KEY` ever leaks, the scraped states give an hour-granularity timeline of when events were seen. That is door activity at hour resolution. To keep the *push pattern* from leaking the same thing, the state branch is re-sealed and pushed on **every** run, whether or not the cursor changed (a fresh nonce changes the ciphertext). This replaces the idea of skipping the push when the coarse value is unchanged, because skipping would make commit times on a public branch show the active hours without any key.
+- Record contents (rule names and ids, place, cursor candidates) are public ciphertext forever, like everything else here.
+- The chunk is gzip + `sealJson`, context `shabbat-fridge/logs/record/v1`, named `chunks/<chunkFileName()>.bin`.
+- **Output and errors.** Console output is fixed text ("chunk written"). It never prints counts, states, ids or times from the data, because the run log is public. Errors use an allowlist of fixed codes (for example `smartthings-http-4xx`, `fit-stall`, `push-failed`); no native exception text, git output or response body is printed. Git commands run with output discarded and only their exit code used.
+
+## c2. Branch store (`src/branchstore.ts`)
+- `state` is an orphan branch with one file, `state/oauth.enc.json`. Each write is a new parentless commit pushed with `--force-with-lease=state:<sha we read>`; the very first creation uses an expected-absent lease (`state:` with an empty expected value) so two first runs cannot both win. The second state push in a run (the cursor, after `logs`) uses the sha returned by the first push in the same run, not the originally read one.
+- `logs` receives only new files. Pushes are fast-forward; on rejection the store fetches and rebases, at most 5 tries, then fails with `push-failed`. First creation also uses an expected-absent lease.
+- Commit author, committer and times use fixed values for messages ("chunk", "state") and the run's real clock for time only.
+- Tested against a local bare repository: first create (absent lease), update, lease conflict, rebase retry with a bound, no stray files in either branch, fixed commit messages, nothing printed.
+- **Repository protection (verified today).** `main` has no branch protection and no rulesets on this repository (API: protection 404, rulesets empty). So today the gates are procedural: PR, green CI, independent review and the owner's OK. Item (d) proposes a ruleset on `main` only (require a PR and the `test` check); `state` and `logs` stay unprotected so the workflow can push. A required human approval cannot be met by a single account, and CODEOWNERS adds nothing for one owner, so the real controls are the workflow lint test (c3), the independent review and the owner's OK.
+
+## c3. Workflow, keepalive, lint test
+`.github/workflows/collector.yml`:
+- **Triggers:** `schedule` (hourly) and `workflow_dispatch` without inputs. Top-level `permissions: {}`; per-job permissions as below.
+- **Concurrency:** group `collector`, `cancel-in-progress: false`.
+- **Job `collect`:** `permissions: contents: write` only; `environment: collector` (restricted to branch `main`; holds `STATE_KEY`; no repository-level secrets exist). Steps in order, all unconditional on data content:
+  1. Guard: assert repository, event name (schedule or workflow_dispatch) and `refs/heads/main` before any secret is in the environment.
+  2. Checkout (`persist-credentials: false`), setup-node, `npm ci --ignore-scripts` with no secrets in scope.
+  3. Fetch `state` and `logs` into worktrees (created absent-safe).
+  4. Rotate: `STATE_KEY` only in this step's `env`. If rotated, push state (first push) and upload the ciphertext as an artifact with `retention-days: 1`.
+  5. Collect: `STATE_KEY` and the derived access token only in this step's env. Write the chunk file.
+  6. Push `logs`. Then re-seal and push `state` (cursor), using the sha from the first push. A failed second state push is a warning (`::warning::`), not a failure, because the next run re-sends the overlap.
+  - The push token is passed only to the push steps, as an `http.extraheader`; its derived base64 value is registered with `::add-mask::` before use.
+- **Job `alert`:** separate, `needs: collect`, `if: failure()`, `permissions: issues: write` only, no secrets, no checkout. It opens one issue labelled `collector-alert` if none is open and comments at most once per 24 hours otherwise, so a stuck schedule does not create an issue per run. The text carries the run link and no data.
+- **Dead-man signal.** A silent stop (disabled schedule, outage) does not fail a run. The local decrypt report prints hours since the newest chunk, and the owner-side check (Instinct runs it on his behalf when it decrypts) alerts when that exceeds 3 hours. The keepalive workflow cannot detect a stopped collector either, so this is the real signal.
+- **Keepalive** is its own file, `.github/workflows/keepalive.yml` (monthly schedule, `permissions: actions: write` only, no environment, no secrets): it calls the Actions API to enable `collector.yml` if it is disabled. Whether our hourly `GITHUB_TOKEN` pushes count as repository activity is unverified; this file is the safeguard and the first week of operation will confirm it.
+- **Action pins.** Every action uses a full 40-hex commit SHA with a version comment. Bumping a pin is its own PR: take the SHA of the upstream release tag, diff the release, and let the lint test confirm the pin format.
+- **Lint test (`test/workflows.test.ts`).** Parses each workflow with the `yaml` package, added as a locked dev-only dependency (never imported by the tool). It fails the build if any of these holds: a trigger outside the allowlist (`schedule`, `workflow_dispatch` without inputs) in the collector or keepalive files; top-level `permissions` not `{}` or read-only; a job without its own `permissions`; any `github.event` expression inside a `run` script; `secrets.*` used outside the rotate and collect steps; `secrets: inherit`; `actions/cache` anywhere; an action not pinned to 40-hex, or a local or docker action without a digest; `persist-credentials` not `false` on a checkout; `set -x`, `printenv` or a bare `env` in a run; an artifact without `retention-days: 1`; the collector job without concurrency, environment and the guard step first. The existing CI workflow is covered by the pin and permissions rules only. This test and review of `.github/` changes are the real control against a bad workflow edit.
+
+## c4. Decrypt script (`scripts/decrypt-logs.ts`)
+- **Where it runs and who holds the key.** On the owner's side only: the private key lives in his vault; Instinct reads it into a 0600 file in its sandbox when he allows it and the work needs it. Never CI.
+- **Inputs:** `LOGS_DIR` (a checkout of `logs`), `OUT_DIR`, `LOGS_PRIVATE_KEY_FILE` (a path; the key never goes in an env var or an argument).
+- **Refusals (all before any decrypt):** `GITHUB_ACTIONS` or `CI` set; key file not a regular file, a symlink, or with mode wider than 0600, or inside any git worktree; `OUT_DIR` resolved with `realpath`, with every ancestor walked for a `.git` entry (directory or file), refused when inside a worktree or inside `LOGS_DIR`, created `0700`, refused when it is not empty. Error text never contains the key path contents or any key bytes.
+- **Behavior:** decrypts every chunk; unknown version byte, wrong size or any failure counts as a failure and the exit code is non-zero; nothing is dropped silently. Groups spilled chunks, dedupes events by `k`, and writes `snapshots/YYYY-MM/*.json` and `events/YYYY-MM.ndjson`, the layout `scripts/analyze.ts` already reads. Output is counts and the hours-since-newest-chunk figure only.
+- **Tests:** round trip; duplicate events removed; tampered, truncated, unknown-version and foreign-key chunks counted with a non-zero exit; refusal under CI; key file symlink and wide mode; output inside a nested `.git` file and directory; output inside `LOGS_DIR`; non-empty output; canary never printed.
+
+## Not migrated
+The plaintext-era data (one snapshot taken 2026-10-28 13:48 in the private repo `reihlinstinct/shabbat-fridge-logs`) is not migrated. It stays private there. Analysis can merge it by copying it into the decrypt output directory by hand.
 
 ## Out of scope here
-Keys, secrets, the Environment, migration of the sealed state and enabling the schedule (item d); compaction (item e). Each needs its own review and the owner's OK.
+Keys, secrets, the Environment, the `main` ruleset, migration of the sealed state and enabling the schedule (item d); compaction (item e).
 
 ## Risks specific to this item
-- The cursor lives in the sealed state, so a leaked `STATE_KEY` plus a scraped state reveals roughly when the last event was seen, not the events.
-- A failed second state write only causes duplicate events, removed on decrypt. A failed first state write after a refresh is the known crash window (ciphertext artifact backup, then one re-authorization).
-- Hourly cadence means a mode change that is reversed between two runs is invisible, as with any polling; the analyzer reports the largest gap.
+- Hour-granularity activity timeline if `STATE_KEY` leaks and states were scraped (see c1). The push pattern itself is constant.
+- A failed second state write only causes duplicates. A failed first state write after a refresh is the known crash window (artifact backup, then one re-authorization).
+- Hourly polling cannot see a mode change that is reversed between two runs. The analyzer reports the largest gap.
+- `main` is not protected today, so a bad merge is stopped only by process and the lint test.
