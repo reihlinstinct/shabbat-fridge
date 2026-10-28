@@ -27,6 +27,8 @@ export interface Block {
   days: string[];
   /** Why each day is in the block (Shabbat or the Hebcal holiday name). */
   reasons: string[];
+  /** Hebrew names matching `reasons`. */
+  reasonsHe: string[];
 }
 
 const pad = (n: number): string => String(n).padStart(2, '0');
@@ -34,13 +36,13 @@ const ymd = (d: Date): string => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${
 const addDays = (d: Date, n: number): Date => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
 
 /** Days that are Yom Tov (Chag) in the chosen calendar, keyed by local YYYY-MM-DD. */
-function yomTovDays(place: Place, start: Date, end: Date, includeYomKippur: boolean): Map<string, string> {
+function yomTovDays(place: Place, start: Date, end: Date, includeYomKippur: boolean): Map<string, { en: string; he: string }> {
   const events = HebrewCalendar.calendar({ start, end, il: place.israel, noHolidays: false, mask: flags.CHAG });
-  const out = new Map<string, string>();
+  const out = new Map<string, { en: string; he: string }>();
   for (const ev of events) {
     const name = ev.getDesc();
     if (!includeYomKippur && name === 'Yom Kippur') continue;
-    out.set(ymd(ev.getDate().greg()), name);
+    out.set(ymd(ev.getDate().greg()), { en: name, he: ev.renderBrief('he').replace(/[\u0591-\u05C7]/g, '') });
   }
   return out;
 }
@@ -65,7 +67,7 @@ export function computeBlocks(place: Place, start: Date, end: Date, opts: Option
   const yt = yomTovDays(place, from, to, opts.includeYomKippur ?? true);
 
   const blocks: Block[] = [];
-  let cur: { first: Date; last: Date; days: string[]; reasons: string[] } | undefined;
+  let cur: { first: Date; last: Date; days: string[]; reasons: string[]; reasonsHe: string[] } | undefined;
   const flush = (): void => {
     if (!cur) return;
     blocks.push({
@@ -73,19 +75,22 @@ export function computeBlocks(place: Place, start: Date, end: Date, opts: Option
       end: new Date(sunset(place, cur.last).getTime() + exit * 60000),
       days: cur.days,
       reasons: cur.reasons,
+      reasonsHe: cur.reasonsHe,
     });
     cur = undefined;
   };
   for (let d = from; d <= to; d = addDays(d, 1)) {
     const key = ymd(d);
-    const reason = yt.get(key) ?? (d.getDay() === 6 ? 'Shabbat' : undefined);
-    if (reason) {
+    const hit = yt.get(key) ?? (d.getDay() === 6 ? { en: 'Shabbat', he: 'שבת' } : undefined);
+    const reason = hit?.en;
+    if (hit && reason) {
       if (cur) {
         cur.last = d;
         cur.days.push(key);
         cur.reasons.push(reason);
+        cur.reasonsHe.push(hit.he);
       } else {
-        cur = { first: d, last: d, days: [key], reasons: [reason] };
+        cur = { first: d, last: d, days: [key], reasons: [reason], reasonsHe: [hit.he] };
       }
     } else {
       flush();
