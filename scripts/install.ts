@@ -35,6 +35,7 @@ const deviceId = env('DEVICE_ID') || (fridges.length === 1 ? fridges[0]!.deviceI
 if (!deviceId) throw new Error(`Found ${fridges.length} devices with ${'samsungce.sabbathMode'}; set DEVICE_ID`);
 if (loc.latitude == null || loc.longitude == null || !loc.timeZoneId) throw new Error('The SmartThings Location has no coordinates or time zone; set them in the SmartThings app');
 const israel = process.env.CALENDAR ? resolveIsrael(process.env.CALENDAR, loc.countryCode) : env('ISRAEL') ? env('ISRAEL') === 'true' : resolveIsrael('auto', loc.countryCode);
+say(`Location country: ${loc.countryCode ?? '(none)'}, calendar input: ${process.env.CALENDAR || 'auto'}`);
 const place: Place = { latitude: loc.latitude, longitude: loc.longitude, tzid: loc.timeZoneId, israel };
 
 const startStr = env('START') || new Date().toISOString().slice(0, 10);

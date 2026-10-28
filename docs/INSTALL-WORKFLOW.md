@@ -70,7 +70,7 @@ runs, replaces only our `shabbat-fridge holidays YYYY` rules, and with **Prune**
 ## Second day of Yom Tov outside Israel / יום טוב שני של גלויות
 
 Both workflows have a `calendar` input. Default for **Install** is `auto`: Israel (one day of Yom Tov) when the SmartThings
-location country is Israel, Diaspora otherwise. Choose `diaspora` to add the second day of Yom Tov (Yom Tov Sheni shel
+location country is Israel, Diaspora otherwise. `auto` stops with an error when SmartThings gives no recognisable country; then choose `israel` or `diaspora` yourself. Choose `diaspora` to add the second day of Yom Tov (Yom Tov Sheni shel
 Galuyot), for example when you keep it while visiting abroad, or when your location is set outside Israel but you want it
 explicitly. Choose `israel` to force one day. For **Generate** the default is `israel`; `diaspora` gives two days.
 The Hebcal cross-check uses the same choice (`i=on` for Israel, `i=off` for Diaspora). Dates follow the Hebrew calendar rules in
@@ -94,7 +94,7 @@ Keep the weekly OFF at +90 or earlier, or lower re-ON accordingly.
 (`test/hundred-years.test.ts`) check our calendar against it day by day for 100 years, then check that the generated rules equal
 entries derived from those dates by plain day arithmetic: eve ON at -60, OFF at +90, no rule for a Saturday-only holiday, and a +100
 re-ON for a Saturday inside a block. A seeded random sample and one holiday per year for 2027-2036 are checked in the JSON as well.
-The workflow **Check Hebcal fixture** (manual, and every January 1) re-fetches the data and fails if Hebcal changed;
+The workflow **Check Hebcal fixture** (manual, and every January 1; GitHub may disable scheduled workflows after 60 days without repository activity, so the schedule is best effort and a manual run is the dependable path) re-fetches the data and fails if Hebcal changed;
 refresh with `npx tsx scripts/refresh-fixture.ts`.
 Limit: Hebcal and our calendar core both use the same Hebrew calendar rules (the standard fixed calendar), so this guards against
 bugs and drift, not against a different halachic custom.

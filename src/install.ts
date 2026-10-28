@@ -57,6 +57,12 @@ export function resolveIsrael(choice: string | undefined, countryCode: string | 
   const c = (choice ?? 'auto').trim().toLowerCase();
   if (c === 'israel') return true;
   if (c === 'diaspora') return false;
-  if (c === 'auto' || c === '') return countryCode === 'ISR' || countryCode === 'IL';
+  if (c === 'auto' || c === '') {
+    const cc = (countryCode ?? '').trim().toUpperCase();
+    if (!/^[A-Z]{2,3}$/.test(cc)) {
+      throw new Error(`Cannot tell the calendar: the SmartThings location country is "${countryCode ?? ''}". Run again with calendar = israel or diaspora.`);
+    }
+    return cc === 'ISR' || cc === 'IL';
+  }
   throw new Error(`calendar must be auto, israel or diaspora (got "${choice}")`);
 }

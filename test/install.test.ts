@@ -84,6 +84,13 @@ describe('resolveIsrael (calendar choice)', () => {
     expect(resolveIsrael('diaspora', 'ISR')).toBe(false);
     expect(resolveIsrael('israel', 'USA')).toBe(true);
   });
+  it('auto fails closed when the country is missing or unrecognised', () => {
+    expect(() => resolveIsrael('auto', null)).toThrow(/israel or diaspora/);
+    expect(() => resolveIsrael('auto', undefined)).toThrow();
+    expect(() => resolveIsrael('auto', '')).toThrow();
+    expect(() => resolveIsrael('auto', 'Israel!')).toThrow();
+    expect(resolveIsrael('diaspora', null)).toBe(false);
+  });
   it('rejects unknown values', () => {
     expect(() => resolveIsrael('both', 'ISR')).toThrow();
   });

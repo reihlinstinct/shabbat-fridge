@@ -66,7 +66,7 @@ for (const cal of ['israel', 'diaspora'] as const) {
       const ours = yomTovDaysOf(blocks);
       expect([...ours].filter((d) => !yomtov.has(d))).toEqual([]);
       expect([...yomtov].filter((d) => !ours.has(d))).toEqual([]);
-      expect(yomtov.size).toBeGreaterThan(cal === 'israel' ? 700 : 1200);
+      expect(yomtov.size).toBeGreaterThan(cal === 'israel' ? 800 : 1300);
     });
 
     it('generated rules equal the oracle entries exactly (every holiday in 100 years)', () => {
@@ -139,5 +139,19 @@ describe('known fixed dates (Hebrew calendar, Israel)', () => {
   it('Pesach 5787 first day Thursday 2027-04-22: ON Wednesday -60, OFF Thursday +90', () => {
     expect(has('2027-04-21 on -60')).toBe(true);
     expect(has('2027-04-22 off 90')).toBe(true);
+  });
+});
+
+describe('known fixed dates (Hebrew calendar, Diaspora)', () => {
+  const { dated } = entriesOf(rulesByYear('x', holidayOnlyActions(computeBlocks({ ...JERUSALEM, israel: false }, new Date(2027, 0, 1), new Date(2028, 11, 31)), OPTS)), DEVICE);
+  const has = (s: string): boolean => dated.map(k).includes(s);
+  it('Shemini Atzeret Sat 2027-10-23 + Simchat Torah Sun 2027-10-24: re-ON Saturday +100, OFF Sunday +90', () => {
+    expect(has('2027-10-23 on 100')).toBe(true);
+    expect(has('2027-10-24 off 90')).toBe(true);
+  });
+  it('Pesach 2027 Thu 04-22 + Fri 04-23 (Pesach II) run into Shabbat: ON Wednesday, no OFF Thursday or Friday', () => {
+    expect(has('2027-04-21 on -60')).toBe(true);
+    expect(has('2027-04-22 off 90')).toBe(false);
+    expect(has('2027-04-23 off 90')).toBe(false);
   });
 });
