@@ -1,0 +1,125 @@
+# Hourly encrypted collector. Design: docs/ENCRYPTED-LOGS.md and docs/ENCRYPTED-LOGS-COLLECTOR.md.
+# Nothing here prints data: scripts print fixed text only, because run logs of a public repository are public.
+# Inactive until the owner-approved setup (item d): the collect job runs only when the repository variable COLLECTOR_ENABLED is
+# "true", and it needs the `collector` Environment (restricted to main) with STATE_KEY, config/logs.pub and the `state` branch.
+name: collector
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch: {}
+permissions: {}
+concurrency:
+  group: collector
+  cancel-in-progress: false
+jobs:
+  collect:
+    if: ${{ vars.COLLECTOR_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: collector
+    permissions:
+      contents: write
+    steps:
+      - name: Guard (repository, event and branch, before any secret is used)
+        run: |
+          set -eu
+          [ "$GITHUB_REPOSITORY" = "reihlinstinct/shabbat-fridge" ]
+          [ "$GITHUB_REF" = "refs/heads/main" ]
+          case "$GITHUB_EVENT_NAME" in schedule|workflow_dispatch) ;; *) exit 1 ;; esac
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+      - name: Read the sealed state
+        id: read
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATE_FILE: ${{ runner.temp }}/state/oauth.enc.json
+          STATE_SHA_FILE: ${{ runner.temp }}/state.sha
+        run: npx --no-install tsx scripts/store.ts read-state
+      - name: Refresh the token when needed
+        id: rotate
+        env:
+          STATE_KEY: ${{ secrets.STATE_KEY }}
+          STATE_FILE: ${{ runner.temp }}/state/oauth.enc.json
+          TOKEN_OUT: ${{ runner.temp }}/st.token
+        run: npx --no-install tsx scripts/collector-rotate.ts
+      - name: Push the rotated state first
+        id: push-state
+        if: steps.rotate.outputs.rotated == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATE_FILE: ${{ runner.temp }}/state/oauth.enc.json
+          STATE_SHA_FILE: ${{ runner.temp }}/state.sha
+        run: npx --no-install tsx scripts/store.ts write-state
+      - name: Keep a short-lived ciphertext copy of the rotated state
+        if: steps.rotate.outputs.rotated == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sealed-state
+          path: ${{ runner.temp }}/state/oauth.enc.json
+          retention-days: 1
+      - name: Collect one encrypted chunk
+        id: collect
+        env:
+          STATE_KEY: ${{ secrets.STATE_KEY }}
+          STATE_FILE: ${{ runner.temp }}/state/oauth.enc.json
+          ST_TOKEN_FILE: ${{ runner.temp }}/st.token
+          CHUNK_DIR: ${{ runner.temp }}/out
+          CURSOR_OUT: ${{ runner.temp }}/cursor.json
+        run: npx --no-install tsx scripts/collect-encrypted.ts
+      - name: Push the chunk
+        id: push-logs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHUNK_DIR: ${{ runner.temp }}/out
+        run: npx --no-install tsx scripts/store.ts write-logs
+      - name: Seal the new cursor (a failure here is only a warning)
+        id: seal
+        continue-on-error: true
+        env:
+          STATE_KEY: ${{ secrets.STATE_KEY }}
+          STATE_FILE: ${{ runner.temp }}/state/oauth.enc.json
+          CURSOR_OUT: ${{ runner.temp }}/cursor.json
+        run: npx --no-install tsx scripts/apply-cursor.ts
+      - name: Push the sealed cursor state (a failure here is only a warning)
+        id: push-cursor
+        if: steps.seal.outcome == 'success'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATE_FILE: ${{ runner.temp }}/state/oauth.enc.json
+          STATE_SHA_FILE: ${{ runner.temp }}/state.sha
+        run: npx --no-install tsx scripts/store.ts write-state
+  alert:
+    needs: collect
+    if: failure()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open or update the single alert issue (no data, at most one comment per 24 hours)
+        id: alert
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          [ "$GITHUB_REPOSITORY" = "reihlinstinct/shabbat-fridge" ]
+          api="https://api.github.com/repos/$GITHUB_REPOSITORY"
+          call() { printf 'header = "Authorization: Bearer %s"\nheader = "Accept: application/vnd.github+json"\n' "$GH_TOKEN" | curl -fsS -K - "$@"; }
+          run="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          num=$(call "$api/issues?state=open&labels=collector-alert&per_page=1" | jq -r '.[0].number // empty')
+          if [ -z "$num" ]; then
+            call -X POST "$api/issues" -d "$(jq -n --arg b "The collector run failed: $run" '{title:"Collector run failed",body:$b,labels:["collector-alert"]}')" >/dev/null
+          else
+            last=$(call "$api/issues/$num/comments?per_page=100" | jq -r 'if length>0 then .[-1].created_at else empty end')
+            [ -z "$last" ] && last=$(call "$api/issues/$num" | jq -r .created_at)
+            age=$(( $(date -u +%s) - $(date -u -d "$last" +%s) ))
+            if [ "$age" -ge 86400 ]; then
+              call -X POST "$api/issues/$num/comments" -d "$(jq -n --arg b "Still failing: $run" '{body:$b}')" >/dev/null
+            fi
+          fi

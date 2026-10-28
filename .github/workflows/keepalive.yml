@@ -1,0 +1,28 @@
+# Monthly safeguard: re-enable the collector workflow if GitHub disabled it for inactivity (see docs/ENCRYPTED-LOGS.md item 8).
+# It cannot detect a stopped collector: that is the job of the keyless staleness check run outside Actions.
+name: keepalive
+on:
+  schedule:
+    - cron: '41 5 3 * *'
+  workflow_dispatch: {}
+permissions: {}
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Guard (repository, event and branch)
+        run: |
+          set -eu
+          [ "$GITHUB_REPOSITORY" = "reihlinstinct/shabbat-fridge" ]
+          [ "$GITHUB_REF" = "refs/heads/main" ]
+          case "$GITHUB_EVENT_NAME" in schedule|workflow_dispatch) ;; *) exit 1 ;; esac
+      - name: Enable the collector workflow
+        id: enable
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          printf 'header = "Authorization: Bearer %s"\nheader = "Accept: application/vnd.github+json"\n' "$GH_TOKEN" | curl -fsS -K - -X PUT "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/collector.yml/enable"
