@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { RECORD_CONTEXT } from '../src/collectrun.js';
-import { randomBytes } from 'node:crypto';
-import { decryptDir, isCanonicalTime, writeLayout } from '../src/decryptlogs.js';
-import { chunkFileName, encryptLog, generateKeyPair } from '../src/logcrypt.js';
+import { generateKeyPairSync, randomBytes } from 'node:crypto';
+import { decryptDir, isCanonicalTime, keyText, writeLayout } from '../src/decryptlogs.js';
+import { chunkFileName, encryptLog, generateKeyPair, publicKeyOf } from '../src/logcrypt.js';
 import { gzipSync } from 'node:zlib';
 
 const ROOT = resolve('.');
@@ -213,5 +213,31 @@ describe('scripts/decrypt-logs.ts', () => {
     symlinkSync(t.logs, join(root, 'logalias'));
     const l = run(['decrypt'], { LOGS_DIR: join(root, 'logalias'), OUT_DIR: join(t.logs, 'o'), LOGS_PRIVATE_KEY_FILE: t.keyFile });
     expect(l.stdout.trim()).toBe('decrypt-logs failed: out-in-logs-dir');
+  });
+  // Disposable key pair made with `openssl genpkey -algorithm X25519`; public key from `openssl pkey -pubout -outform DER | tail -c 32 | base64`. Test only.
+  const OPENSSL_PEM = `-----BEGIN PRIVATE KEY-----
+MC4CAQAwBQYDK2VuBCIEIDAEFi92WiXo/+wX6VqcnusnsHUlvqnliQUdFjs0Y0du
+-----END PRIVATE KEY-----
+`;
+  const OPENSSL_PUB = 'rSBCyUBUvlxZcXNcBdm9+I9Wu3l6zuhDazWpYuWLCx8=';
+  it('accepts an openssl PKCS#8 PEM key file: the derived public key matches openssl, and chunks sealed to it decrypt', () => {
+    const t = tree();
+    writeFileSync(t.keyFile, OPENSSL_PEM, { mode: 0o600 });
+    t.put(seal(rec('2026-10-28T10:00:00.000Z', [{ k: 'a', time: '2026-10-28T09:00:00Z' }]), OPENSSL_PUB));
+    const r = run(['decrypt'], { LOGS_DIR: t.logs, OUT_DIR: t.out, LOGS_PRIVATE_KEY_FILE: t.keyFile });
+    expect(r.status).toBe(0);
+    expect(r.stdout).toMatch(/^chunks 1, failed 0, snapshots 1, events 1,/);
+    expect(keyText(OPENSSL_PEM)).not.toBe('');
+    expect(publicKeyOf(keyText(OPENSSL_PEM))).toBe(OPENSSL_PUB);
+  });
+  it('rejects PEM keys of another type, encrypted PEMs and junk with a fixed code and no key text', () => {
+    const t = tree();
+    const ed = generateKeyPairSync('ed25519').privateKey.export({ format: 'pem', type: 'pkcs8' }) as string;
+    for (const bad of [ed, '-----BEGIN ENCRYPTED PRIVATE KEY-----\nAAAA\n-----END ENCRYPTED PRIVATE KEY-----\n', '-----BEGIN PRIVATE KEY-----\nCANARY\n-----END PRIVATE KEY-----\n']) {
+      writeFileSync(t.keyFile, bad, { mode: 0o600 });
+      const r = run(['decrypt'], { LOGS_DIR: t.logs, OUT_DIR: t.out, LOGS_PRIVATE_KEY_FILE: t.keyFile });
+      expect(r.stdout.trim()).toBe('decrypt-logs failed: key-file-invalid');
+      expect(r.stdout + r.stderr).not.toContain('CANARY');
+    }
   });
 });
