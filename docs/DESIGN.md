@@ -205,6 +205,41 @@ Overall ranking for this fridge:
 3. Cloudflare Workers instead of Actions, if Actions scheduling proves unreliable.
 4. Third-party connectors (Shabbat Switch, IFTTT, Make): only with the token risk flagged and accepted by him.
 
+## 4e. Two ways to cover holidays: holiday-only companion vs merged blocks
+
+The user keeps his weekly rules (Friday ON at sunset-60, Saturday OFF at sunset+90) and asked for a separate
+holiday rule for 10 years, with protection for a Saturday that is followed by a holiday: a dated ON at sunset+100,
+ten minutes after the weekly OFF. Implemented as `holidayOnlyActions` (mode `holiday` in `scripts/generate.ts`).
+
+| | Holiday-only companion (user's idea) | Merged blocks (4 above) |
+| --- | --- | --- |
+| Footprint | Adds rules only. Weekly rules untouched. Easy to remove | Replaces the weekly Saturday OFF with dated OFFs, covers every Shabbat too |
+| Actions for 10 years (Israel, Yom Kippur on) | 104 (9 to 11 per year, one rule per year) | 1,126 (about 110 per year) |
+| Guardrail risk | Low (small rules) | Higher (about 110 actions per rule; limit unmeasured) |
+| Saturday followed by Yom Tov | The weekly OFF fires at +90, mode is OFF for about 10 minutes, then ON at +100 | No OFF at all |
+| Failure if the +100 ON does not arrive | Mode stays OFF through the Yom Tov, silently | Not applicable. A missing entry ON is the shared risk |
+| Halachic exposure | During the OFF window the fridge light, display and door sensing work again. A door opened in those 10 minutes is the case Sabbath mode exists to prevent. Happens only on Motzaei Shabbat before a holiday (Rosh Hashana Sat+Sun, Sat+Sun Yom Tov, Sun-Mon cases; about 1 to 3 evenings a year) | None |
+| After the 10 year horizon | Weekly Shabbat still works, holidays unprotected | Saturdays no longer turn OFF, so the mode stays on (the fridge keeps cooling); noticeable and safe to notice |
+
+How the generator handles each pattern with the weekly rules in place:
+- Holiday on a weekday: ON on the eve at sunset-60, OFF on the holiday at sunset+90.
+- Holiday on Friday plus Shabbat, or Thu+Fri+Shabbat: ON on the first eve; no OFF, the weekly Saturday OFF ends it.
+- Holiday on Saturday only: nothing (weekly rules cover it).
+- Saturday followed by a holiday (Sat+Sun, or Sat then Sun+Mon): no entry ON, a dated ON at sunset+100 on the Saturday,
+  OFF on the last holiday day at sunset+90.
+- Holiday run ending on Saturday: no OFF (weekly).
+
+Unknowns to test with the user at the fridge: whether leaving and re-entering Sabbath mode ten minutes apart is
+accepted by the fridge (some appliances ignore a command within minutes of a mode change), and whether the
+Sabbath-mode status shows `on` again after +100. The one-rule test and the verification step read the status
+history to confirm.
+
+Safer choice: for the fridge in Sabbath-to-Yom-Tov transitions the merged design is safer (no OFF window); for the
+account the companion is safer (add-only, small, reversible). Recommended path: install the companion now as
+asked, accept the ten-minute window knowingly, and move to merged blocks later if it matters or if the fridge
+misbehaves on rapid toggling. A shorter gap (for example +91) shrinks the window but risks the ON being processed
+before the OFF and leaving the fridge OFF all holiday, so +100 stays the default.
+
 ## 5. Components
 
 - `core` (done): `computeBlocks(place, from, to, options)`.

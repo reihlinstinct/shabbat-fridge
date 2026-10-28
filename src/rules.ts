@@ -140,3 +140,49 @@ export function diffRules(existing: Rule[], desired: EveryAction[], deviceId: st
     skipped: have.skipped,
   };
 }
+
+export interface HolidayOnlyOptions extends RuleOptions {
+  /** Minutes after sunset to re-enter the mode on a Saturday that is followed by Yom Tov (default 100). */
+  reenterMinutesAfterSunset?: number;
+}
+
+const isSaturday = (day: string): boolean => parseDay(day).getDay() === 6;
+
+/**
+ * Companion mode: leave the user's weekly rules (Friday ON, Saturday OFF at sunset+exit) untouched and add only
+ * what holidays need. Only blocks that contain a Yom Tov day produce actions:
+ * - ON on the eve of the first day, unless the first day is Saturday (the weekly Friday ON covers it);
+ * - for every Saturday that is NOT the last day of the block, an ON at sunset+reenter, after the weekly
+ *   Saturday OFF has fired (this is a brief OFF window between the two);
+ * - OFF on the last day at sunset+exit, unless the last day is Saturday (the weekly OFF covers it).
+ */
+export function holidayOnlyActions(blocks: Block[], opts: HolidayOnlyOptions): EveryAction[] {
+  const entry = opts.entryMinutesBeforeSunset ?? 60;
+  const exit = opts.exitMinutesAfterSunset ?? 90;
+  const reenter = opts.reenterMinutesAfterSunset ?? 100;
+  const out: EveryAction[] = [];
+  for (const b of blocks) {
+    if (b.reasons.every((r) => r === 'Shabbat')) continue;
+    const firstDay = b.days[0]!;
+    const lastDay = b.days[b.days.length - 1]!;
+    if (!isSaturday(firstDay)) {
+      const first = parseDay(firstDay);
+      out.push(at(new Date(first.getFullYear(), first.getMonth(), first.getDate() - 1), -entry, 'on', opts.deviceId));
+    }
+    for (const day of b.days) {
+      if (isSaturday(day) && day !== lastDay) out.push(at(parseDay(day), reenter, 'on', opts.deviceId));
+    }
+    if (!isSaturday(lastDay)) out.push(at(parseDay(lastDay), exit, 'off', opts.deviceId));
+  }
+  return out;
+}
+
+/** Group actions into one rule per calendar year of the action date, named `<prefix> <year>`. */
+export function rulesByYear(prefix: string, actions: EveryAction[]): Rule[] {
+  const byYear = new Map<number, EveryAction[]>();
+  for (const a of actions) {
+    const y = a.every.specific.year;
+    byYear.set(y, [...(byYear.get(y) ?? []), a]);
+  }
+  return [...byYear.entries()].sort((x, y) => x[0] - y[0]).map(([y, acts]) => ({ name: `${prefix} ${y}`, actions: acts }));
+}
