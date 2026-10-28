@@ -1,11 +1,11 @@
 # Install the holiday rules with GitHub Actions / התקנת חוקי החגים עם GitHub Actions
 
 The workflow **Install holiday rules** (`.github/workflows/install-rules.yml`) creates or updates the SmartThings
-rules named `shabbat-fridge holidays YYYY` (one per year, 10 years). It never touches any other rule (your weekly
-Shabbat rules stay as they are). It starts as a dry run.
+rules named `shabbat-fridge holidays YYYY` (one per year, 10 years) and, only if you turn on `weekly_rules`, one rule named
+`shabbat-fridge weekly`. It never touches any other rule (your own weekly Shabbat rules stay as they are). It starts as a dry run.
 
-הפעולה **Install holiday rules** יוצרת או מעדכנת רק חוקים בשם `shabbat-fridge holidays YYYY` (חוק לכל שנה).
-היא לא נוגעת באף חוק אחר, כולל חוקי השבת השבועיים. ברירת המחדל היא הרצה יבשה (בלי כתיבה).
+הפעולה **Install holiday rules** יוצרת או מעדכנת רק חוקים בשם `shabbat-fridge holidays YYYY` (חוק לכל שנה), ורק אם הפעלת `weekly_rules` גם חוק אחד בשם `shabbat-fridge weekly`.
+היא לא נוגעת באף חוק אחר, כולל חוקי השבת השבועיים שלך. ברירת המחדל היא הרצה יבשה (בלי כתיבה).
 
 ## 1. Create the SmartThings token / יצירת הטוקן
 
@@ -98,3 +98,25 @@ The workflow **Check Hebcal fixture** (manual, and every January 1; GitHub may d
 refresh with `npx tsx scripts/refresh-fixture.ts`.
 Limit: Hebcal and our calendar core both use the same Hebrew calendar rules (the standard fixed calendar), so this guards against
 bugs and drift, not against a different halachic custom.
+
+## Optional weekly Shabbat rule / חוק שבת שבועי (אופציונלי)
+
+Input `weekly_rules` (default **off**) in both workflows adds one rule named `shabbat-fridge weekly`: Friday ON at sunset minus the entry
+offset (60) and Saturday OFF at sunset plus the exit offset (90), repeating every week. Use it when the fridge has no weekly rules yet.
+If you already have your own weekly rules (for example "Shabbat mode" and "Weekday Mode"), leave it off: they stay untouched.
+Running the install workflow with it on creates the rule once; running it again shows `unchanged`. Turning the input off later does not
+delete it (Prune only removes yearly holiday rules); delete it in SmartThings if you no longer want it.
+
+Interplay with the holiday re-ON: the +100 re-ON on a Saturday before a holiday only works if the weekly Saturday OFF fires **before** it.
+So the weekly OFF offset must be smaller than the re-ON offset: the workflow refuses `exit >= re-ON`. If one of your own weekly rules turns
+the mode off at or after the re-ON, the install summary prints a WARNING, because that rule would end the holiday early.
+
+### Late OFF: what to change / מה לשנות
+
+If the WARNING appears, a weekly OFF fires at or after the re-ON. Either raise the re-ON offset above that OFF (input `reenter_minutes_after_sunset`),
+or lower the weekly OFF (move your own rule or the `exit_minutes_after_sunset` input). The check looks at the rules that will exist after the run
+(your own rules, our weekly rule if it stays, and any unchanged rules), for this fridge only, and honors Minute and Hour offsets.
+The hard refusal (exit must be smaller than re-ON) runs only when `weekly_rules` is on, because only then do we create the OFF. With it off, you get the WARNING only.
+Prune removes yearly holiday rules; it does not remove `shabbat-fridge weekly`. When `weekly_rules` is on and the weekly rule exists twice, the plan removes the duplicate copies
+(same name) and keeps one, with or without Prune. With `weekly_rules` off nothing about the weekly rule is changed or cleaned up.
+With `weekly_rules` off, lowering `exit_minutes_after_sunset` cannot change a retained weekly rule: edit that rule yourself, turn on weekly management, or raise the re-ON.

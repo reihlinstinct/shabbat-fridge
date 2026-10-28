@@ -7,9 +7,9 @@
  */
 import { appendFileSync } from 'node:fs';
 import { computeBlocks, type Place } from '../src/blocks.js';
-import { isEmpty, planInstall, resolveIsrael, type ExistingRule } from '../src/install.js';
+import { MANAGED_NAME, isEmpty, planInstall, resolveIsrael, rulesAfterPlan, type ExistingRule } from '../src/install.js';
 import { crossCheckOrThrow } from '../src/crosscheck.js';
-import { holidayOnlyActions, rulesByYear } from '../src/rules.js';
+import { holidayOnlyActions, lateWeeklyOffs, rulesByYear, weeklyRule } from '../src/rules.js';
 import { SmartThings, sabbathDevices } from '../src/smartthings.js';
 
 const env = (k: string, d = ''): string => process.env[k] ?? d;
@@ -50,15 +50,20 @@ if (env('CROSSCHECK', 'true') !== 'false') {
   say(`Cross-check: ${n} Yom Tov days match the Hebcal web API`);
 }
 const actions = holidayOnlyActions(blocks, { deviceId, entryMinutesBeforeSunset: entry, exitMinutesAfterSunset: exit, reenterMinutesAfterSunset: Number(env('REENTER', '100')) });
-const desired = rulesByYear('shabbat-fridge holidays', actions);
+const reenter = Number(env('REENTER', '100'));
+const withWeekly = env('WEEKLY_RULES', 'false') === 'true';
+const desired = [...(withWeekly ? [weeklyRule({ deviceId, entryMinutesBeforeSunset: entry, exitMinutesAfterSunset: exit, reenterMinutesAfterSunset: reenter })] : []), ...rulesByYear('shabbat-fridge holidays', actions)];
 
 const existing: ExistingRule[] = [];
 for (const s of await st.rules(locationId)) existing.push(await st.rule(locationId, s.id));
 const plan = planInstall(existing, desired, env('PRUNE') === 'true');
+const lateOffs = lateWeeklyOffs(rulesAfterPlan(existing, plan), deviceId, reenter);
 
 say(`Calendar: ${israel ? 'Israel' : 'Diaspora'}, time zone ${place.tzid}, window ${startStr} + ${env('YEARS', '10')} years, offsets ${-entry}/+${exit}/+${env('REENTER', '100')} min`);
+say(`Weekly Shabbat rule: ${withWeekly ? 'included (shabbat-fridge weekly)' : 'not included (opt-in)'}`);
 say(`Desired: ${desired.length} rules, ${actions.length} actions. Existing rules left alone: ${plan.untouched.length}`);
 say(`Plan: create ${plan.create.length}, update ${plan.update.length}, remove ${plan.remove.length}, unchanged ${plan.unchanged.length}`);
+for (const w of lateOffs) say(`  WARNING: a rule that will remain on this device fires "${w}" at or after the holiday re-ON (+${reenter}); it can end a holiday early`);
 for (const r of plan.create) say(`  create ${r.name} (${r.actions.length} actions)`);
 for (const u of plan.update) say(`  update ${u.rule.name} (${u.rule.actions.length} actions)`);
 for (const r of plan.remove) say(`  remove ${r.name}`);
@@ -72,7 +77,7 @@ else {
   const after: ExistingRule[] = [];
   for (const s of await st.rules(locationId)) after.push(await st.rule(locationId, s.id));
   const again = planInstall(after, desired, env('PRUNE') === 'true');
-  const untouchedSame = existing.filter((e) => !/^shabbat-fridge holidays \d{4}$/.test(e.name)).every((e) => {
+  const untouchedSame = existing.filter((e) => !MANAGED_NAME.test(e.name)).every((e) => {
     const a = after.find((x) => x.id === e.id);
     return a && JSON.stringify(a.actions) === JSON.stringify(e.actions);
   });

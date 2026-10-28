@@ -85,26 +85,38 @@ export function entriesOf(rules: Rule[], deviceId: string): { dated: Entry[]; we
   const weekly: string[] = [];
   let skipped = 0;
   for (const rule of rules) {
-    for (const a of rule.actions) {
-      const sp = a.every.specific as unknown as {
-        year?: number;
-        month?: number;
-        day?: number;
-        daysOfWeek?: string[];
-        reference: string;
-        offset?: { value: { integer: number } };
-      };
-      if (sp.reference !== 'Sunset') {
+    // Real accounts hold other shapes (top-level "if" or "command" actions, every.interval, missing fields).
+    // Anything that is not a Sunset-relative timed command on this device is skipped, never an error.
+    const rawActions: unknown = (rule as { actions?: unknown }).actions;
+    for (const a of Array.isArray(rawActions) ? (rawActions as unknown[]) : []) {
+      const every = (a as { every?: { specific?: unknown; actions?: unknown } } | null)?.every;
+      const sp = every?.specific as
+        | {
+            year?: number;
+            month?: number;
+            day?: number;
+            daysOfWeek?: string[];
+            reference?: string;
+            offset?: { value?: { integer?: number }; unit?: string };
+          }
+        | undefined;
+      if (!sp || typeof sp !== 'object' || sp.reference !== 'Sunset' || !Array.isArray(every?.actions)) {
         skipped++;
         continue;
       }
-      for (const act of a.every.actions) {
-        const cmd = act.command.commands.find((c) => c.capability === CAPABILITY);
-        if (!cmd || !act.command.devices.includes(deviceId)) {
+      const unit = sp.offset?.unit ?? 'Minute';
+      const raw = sp.offset?.value?.integer ?? 0;
+      const offset = unit === 'Hour' ? raw * 60 : unit === 'Minute' ? raw : Number.NaN;
+      if (Number.isNaN(offset)) {
+        skipped++;
+        continue;
+      }
+      for (const act of every.actions as Array<{ command?: { devices?: string[]; commands?: Array<{ capability?: string; command?: string }> } }>) {
+        const cmd = act?.command?.commands?.find((c) => c.capability === CAPABILITY);
+        if (!cmd || (cmd.command !== 'on' && cmd.command !== 'off') || !act.command?.devices?.includes(deviceId)) {
           skipped++;
           continue;
         }
-        const offset = sp.offset?.value.integer ?? 0;
         if (sp.year && sp.month && sp.day) {
           const date = `${sp.year}-${String(sp.month).padStart(2, '0')}-${String(sp.day).padStart(2, '0')}`;
           dated.push({ date, offset, command: cmd.command });
@@ -185,4 +197,45 @@ export function rulesByYear(prefix: string, actions: EveryAction[]): Rule[] {
     byYear.set(y, [...(byYear.get(y) ?? []), a]);
   }
   return [...byYear.entries()].sort((x, y) => x[0] - y[0]).map(([y, acts]) => ({ name: `${prefix} ${y}`, actions: acts }));
+}
+
+export const WEEKLY_RULE_NAME = 'shabbat-fridge weekly';
+
+export interface WeeklyOptions {
+  deviceId: string;
+  entryMinutesBeforeSunset?: number;
+  exitMinutesAfterSunset?: number;
+  /** The holiday re-ON offset. The weekly Saturday OFF must fire before it, or the re-ON would be undone. */
+  reenterMinutesAfterSunset?: number;
+}
+
+/**
+ * Optional weekly Shabbat rule: Friday ON at sunset - entry, Saturday OFF at sunset + exit, one rule with two
+ * repeating actions. The holiday design (holidayOnlyActions) assumes this OFF fires before the +reenter ON,
+ * so exit must be smaller than reenter; otherwise this throws.
+ */
+export function weeklyRule(opts: WeeklyOptions): Rule {
+  const entry = opts.entryMinutesBeforeSunset ?? 60;
+  const exit = opts.exitMinutesAfterSunset ?? 90;
+  const reenter = opts.reenterMinutesAfterSunset ?? 100;
+  if (!(exit < reenter)) throw new Error(`Saturday OFF (+${exit} min) must fire before the holiday re-ON (+${reenter} min); lower exit or raise re-ON`);
+  const act = (day: 'Fri' | 'Sat', offset: number, command: 'on' | 'off'): EveryAction =>
+    ({
+      every: {
+        specific: { daysOfWeek: [day], reference: 'Sunset', offset: { value: { integer: offset }, unit: 'Minute' } },
+        actions: [{ command: { devices: [opts.deviceId], commands: [{ component: 'main', capability: CAPABILITY, command }] } }],
+      },
+    }) as unknown as EveryAction; // weekly entries carry daysOfWeek instead of a date
+  return { name: WEEKLY_RULE_NAME, actions: [act('Fri', -entry, 'on'), act('Sat', exit, 'off')] };
+}
+
+/**
+ * Existing weekly OFF actions on this device that fire at or after the holiday re-ON. They would turn the mode off
+ * again right after the re-ON, ending a holiday early. Returns human-readable descriptions (empty when fine).
+ */
+export function lateWeeklyOffs(existing: Rule[], deviceId: string, reenter: number): string[] {
+  return entriesOf(existing, deviceId).weekly.filter((w) => {
+    const m = /^(.*) off ([+-]\d+)$/.exec(w);
+    return !!m && m[1]!.split(',').includes('Sat') && Number(m[2]) >= reenter;
+  });
 }
