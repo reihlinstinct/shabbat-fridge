@@ -1,0 +1,30 @@
+name: Check Hebcal fixture
+# Re-fetches 100 years of Yom Tov days from the Hebcal API and fails if the pinned test fixture changed.
+# The refreshed file is uploaded as an artifact; commit it through a PR if the change is expected.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 5 1 1 *'
+permissions:
+  contents: read
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Refresh fixture for the same year range
+        run: |
+          FIRST=$(jq .firstYear test/fixtures/hebcal-yomtov.json); LAST=$(jq .lastYear test/fixtures/hebcal-yomtov.json)
+          npx tsx scripts/refresh-fixture.ts "$FIRST" "$LAST"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: hebcal-yomtov-fixture
+          path: test/fixtures/hebcal-yomtov.json
+      - name: Fail if Hebcal now disagrees with the pinned fixture
+        run: git diff --exit-code -- test/fixtures/hebcal-yomtov.json

@@ -87,3 +87,14 @@ The time zone stays explicit: it comes from your SmartThings location, never fro
 The +100 re-ON after a Saturday that is followed by a holiday assumes the weekly Saturday OFF rule fires at +90 minutes or earlier.
 If your weekly OFF is later than +100 (or removed), the re-ON would fire before it and the OFF would then turn Sabbath mode off during the holiday.
 Keep the weekly OFF at +90 or earlier, or lower re-ON accordingly.
+
+## How the dates are tested / איך התאריכים נבדקים
+
+`test/fixtures/hebcal-yomtov.json` pins every Yom Tov day for 2026-2126 (Israel and Diaspora) from the Hebcal web API. The tests
+(`test/hundred-years.test.ts`) check our calendar against it day by day for 100 years, then check that the generated rules equal
+entries derived from those dates by plain day arithmetic: eve ON at -60, OFF at +90, no rule for a Saturday-only holiday, and a +100
+re-ON for a Saturday inside a block. A seeded random sample and one holiday per year for 2027-2036 are checked in the JSON as well.
+The workflow **Check Hebcal fixture** (manual, and every January 1) re-fetches the data and fails if Hebcal changed;
+refresh with `npx tsx scripts/refresh-fixture.ts`.
+Limit: Hebcal and our calendar core both use the same Hebrew calendar rules (the standard fixed calendar), so this guards against
+bugs and drift, not against a different halachic custom.
