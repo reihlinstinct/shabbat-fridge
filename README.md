@@ -26,6 +26,8 @@ npm test
 npm run typecheck
 ```
 
+`scripts/generate.ts` writes the Rules JSON from environment settings (no private data in the repo).
+
 `src/rules.ts` turns blocks into dated, Sunset-relative SmartThings Rules actions and diffs them against existing rules (dry run).
 
 Calendar and sunset data come from [@hebcal/core](https://github.com/hebcal/hebcal-es6) and run fully offline.
