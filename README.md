@@ -44,3 +44,4 @@ Note: the holiday re-ON (+100 min on a Saturday before a holiday) assumes the we
 
 Optional: both workflows can also manage a weekly Shabbat rule (`weekly_rules`, off by default). See docs/INSTALL-WORKFLOW.md.
 Optional: read-only snapshot collector and analyzer for post-incident analysis (private storage only). See docs/FORENSICS.md.
+Unattended token rotation and yearly installer: see docs/UNATTENDED.md.

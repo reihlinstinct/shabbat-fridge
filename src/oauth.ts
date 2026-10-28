@@ -14,6 +14,9 @@ export interface OAuthState {
   /** ISO time of the last successful exchange or refresh. */
   obtainedAt: string;
   scope?: string;
+  /** Sealed too: lets runs reuse a still-valid access token instead of rotating every time. */
+  accessToken?: string;
+  accessExpiresAt?: string;
 }
 
 export interface TokenResponse {
@@ -67,6 +70,13 @@ export async function refreshState(state: OAuthState, fetcher: Fetch = fetch, no
   if (t.refresh_token === state.refreshToken) throw new Error('Refresh did not return a new refresh token; refusing to continue');
   return {
     accessToken: t.access_token,
-    state: { ...state, refreshToken: t.refresh_token, obtainedAt: now.toISOString(), scope: t.scope ?? state.scope },
+    state: {
+      ...state,
+      refreshToken: t.refresh_token,
+      obtainedAt: now.toISOString(),
+      scope: t.scope ?? state.scope,
+      accessToken: t.access_token,
+      accessExpiresAt: new Date(now.getTime() + (t.expires_in ?? 86000) * 1000).toISOString(),
+    },
   };
 }

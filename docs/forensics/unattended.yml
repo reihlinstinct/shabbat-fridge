@@ -1,0 +1,119 @@
+# TEMPLATE for the PRIVATE logs repository: copy to .github/workflows/unattended.yml there. Never use it in the public repo.
+# Needs one secret: STATE_KEY (32 random bytes, base64). The OAuth state (client secret + refresh token) lives encrypted in
+# state/oauth.enc.json and is committed back after each rotation. No GitHub App and no SmartThings token secret.
+name: Unattended snapshot, token rotation and optional yearly rules
+on:
+  workflow_dispatch:
+    inputs:
+      install_rules:
+        description: 'Also run the rule installer with the refreshed token (needs an app authorized with w:rules)'
+        type: boolean
+        default: false
+      dry_run:
+        description: 'Installer dry run (only used when install_rules is on)'
+        type: boolean
+        default: true
+  schedule:
+    - cron: '7,37 * * * *'   # every 30 minutes, best effort; the token is refreshed only when it has under 2 hours left
+    - cron: '23 4 2 1 *'     # yearly rule extension, runs only when the repository variable YEARLY_INSTALL is "true"
+permissions:
+  contents: write
+  issues: write
+concurrency:
+  group: unattended          # one run at a time: the refresh token is single-use
+  cancel-in-progress: false
+env:
+  TOOL_REPO: reihlinstinct/shabbat-fridge
+  TOOL_REF: REPLACE_WITH_REVIEWED_COMMIT_SHA   # 40-character commit SHA of the tool you reviewed; the run fails until you set it
+  LOGS_REPO: reihlinstinct/shabbat-fridge-logs
+jobs:
+  run:
+    if: github.repository == 'reihlinstinct/shabbat-fridge-logs'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Fail closed unless this is the PRIVATE logs repository and the tool ref is pinned
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          [ "$GITHUB_REPOSITORY" = "$LOGS_REPO" ] || { echo "wrong repository"; exit 1; }
+          priv=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$GITHUB_REPOSITORY" | jq -r .private)
+          [ "$priv" = "true" ] || { echo "repository is not private; refusing to run"; exit 1; }
+          echo "$TOOL_REF" | grep -Eq '^[0-9a-f]{40}$' || { echo "TOOL_REF must be a 40-character commit SHA"; exit 1; }
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: logs
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: reihlinstinct/shabbat-fridge
+          ref: ${{ env.TOOL_REF }}
+          path: tool
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+      - run: npm ci --ignore-scripts
+        working-directory: tool
+      - name: Refresh the token when needed (fails closed, never overwrites with a bad value)
+        id: rotate
+        working-directory: tool
+        env:
+          STATE_KEY: ${{ secrets.STATE_KEY }}
+          STATE_FILE: ${{ github.workspace }}/logs/state/oauth.enc.json
+        run: npx --no-install tsx scripts/rotate.ts
+      - name: Back up the sealed state (ciphertext only) in case the push below fails
+        if: steps.rotate.outputs.rotated == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sealed-state
+          path: logs/state/oauth.enc.json
+          retention-days: 3
+      - name: Commit the new sealed state first (retries; a lost refresh token needs one re-authorization)
+        if: steps.rotate.outputs.rotated == 'true'
+        working-directory: logs
+        run: |
+          set -eu
+          git config user.name "fridge-logs"; git config user.email "fridge-logs@users.noreply.github.com"
+          git add state/oauth.enc.json
+          git commit -m "rotate token state"
+          for i in 1 2 3 4 5; do git push && exit 0; git pull --rebase; sleep 3; done
+          echo "could not push the rotated state"; exit 1
+      - name: Read-only snapshot
+        working-directory: tool
+        env:
+          OUT_DIR: ${{ github.workspace }}/logs/data
+          RETAIN_DAYS: '365'
+        run: npx --no-install tsx scripts/collect.ts
+      - name: Analyze
+        working-directory: tool
+        env:
+          SNAP_DIR: ${{ github.workspace }}/logs/data
+        run: npx --no-install tsx scripts/analyze.ts | tee "$GITHUB_WORKSPACE/logs/data/report.txt" >> "$GITHUB_STEP_SUMMARY"
+      - name: Optional rule installer (manual input, or the yearly schedule when YEARLY_INSTALL is true)
+        if: ${{ (github.event_name == 'workflow_dispatch' && inputs.install_rules) || (github.event.schedule == '23 4 2 1 *' && vars.YEARLY_INSTALL == 'true') }}
+        working-directory: tool
+        env:
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+          YEARS: '10'
+        run: npx --no-install tsx scripts/install.ts
+      - name: Commit data
+        working-directory: logs
+        run: |
+          set -eu
+          git config user.name "fridge-logs"; git config user.email "fridge-logs@users.noreply.github.com"
+          git add data
+          git diff --cached --quiet || git commit -m "snapshot $(date -u +%FT%TZ)"
+          for i in 1 2 3; do git push && exit 0; git pull --rebase; sleep 3; done
+          exit 1
+      - name: Alert on failure (issue in this private repository, plus GitHub's failed-run email)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          body="Run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID} failed. If the log says the token endpoint rejected the refresh (invalid_grant), the refresh token expired after 29 days unused or was lost: re-authorize once (see docs/UNATTENDED.md in the tool repo)."
+          existing=$(curl -fsS -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/issues?state=open&labels=fridge-alert" | jq -r '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/issues/$existing/comments" -d "$(jq -n --arg b "$body" '{body:$b}')" >/dev/null
+          else
+            curl -fsS -X POST -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$GITHUB_REPOSITORY/issues" -d "$(jq -n --arg b "$body" '{title:"Fridge collector or token rotation failed",body:$b,labels:["fridge-alert"]}')" >/dev/null
+          fi

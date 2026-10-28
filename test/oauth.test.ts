@@ -120,3 +120,31 @@ describe('createOauthApp', () => {
     await expect(run(['r:devices:*', 'r:rules:*'], 'https://evil.example/cb')).rejects.toThrow(/redirect/);
   });
 });
+
+describe('access token reuse', () => {
+  it('a still-valid stored access token is reused: no network call, file unchanged', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rot-'));
+    const key = newKey();
+    const file = join(dir, 's.json');
+    const now = new Date('2026-10-28T12:00:00Z');
+    writeFileSync(file, JSON.stringify(seal({ ...STATE, accessToken: 'AT', accessExpiresAt: new Date(now.getTime() + 5 * 3600000).toISOString() }, key)));
+    const before = readFileSync(file, 'utf8');
+    const calls: Call[] = [];
+    const r = await rotateFile(file, key, fake(() => json(500, {}), calls), now);
+    expect(r).toMatchObject({ accessToken: 'AT', rotated: false });
+    expect(calls).toHaveLength(0);
+    expect(readFileSync(file, 'utf8')).toBe(before);
+  });
+  it('an access token with under 2 hours left triggers a refresh and stores the new token and expiry', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'rot-'));
+    const key = newKey();
+    const file = join(dir, 's.json');
+    const now = new Date('2026-10-28T12:00:00Z');
+    writeFileSync(file, JSON.stringify(seal({ ...STATE, accessToken: 'AT', accessExpiresAt: new Date(now.getTime() + 3600000).toISOString() }, key)));
+    const r = await rotateFile(file, key, fake(() => json(200, { access_token: 'AT2', refresh_token: 'RT-2', expires_in: 86000 })), now);
+    expect(r.rotated).toBe(true);
+    const s = open(JSON.parse(readFileSync(file, 'utf8')), key);
+    expect(s).toMatchObject({ refreshToken: 'RT-2', accessToken: 'AT2' });
+    expect(Date.parse(s.accessExpiresAt!)).toBeGreaterThan(now.getTime() + 20 * 3600000);
+  });
+});

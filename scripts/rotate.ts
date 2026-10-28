@@ -9,9 +9,10 @@ import { rotateFile } from '../src/rotatefile.js';
 
 const key = process.env.STATE_KEY || '';
 if (!key) throw new Error('missing STATE_KEY');
-const { accessToken, obtainedAt } = await rotateFile(process.env.STATE_FILE || 'state/oauth.enc.json', key);
+const { accessToken, obtainedAt, rotated } = await rotateFile(process.env.STATE_FILE || 'state/oauth.enc.json', key);
 if (process.env.GITHUB_ENV) {
   console.log(`::add-mask::${accessToken}`);
   appendFileSync(process.env.GITHUB_ENV, `ST_TOKEN=${accessToken}\n`);
 }
-console.log(`Token rotated at ${obtainedAt}. New sealed state written.`);
+if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `rotated=${rotated}\n`);
+console.log(rotated ? `Token rotated at ${obtainedAt}. New sealed state written.` : `Stored access token still valid (from ${obtainedAt}); nothing rotated.`);
