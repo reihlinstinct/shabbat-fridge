@@ -1,6 +1,6 @@
 # Design
 
-Status: draft v0.1. Open questions are marked **OPEN**. Facts not yet checked against the user's real account or
+Status: draft v0.2. Open questions are marked **OPEN**. Facts not yet checked against the user's real account or
 fridge are marked **UNVERIFIED**. Sources are in [RESEARCH.md](RESEARCH.md).
 
 ## 1. Goal
@@ -15,7 +15,7 @@ ends, using the real local sunset of the place where the fridge is. No hardcoded
 3. Location selectable. Preferred source: the SmartThings Location that holds the device (latitude,
    longitude, time zone, country as ISO alpha-3, e.g. ISR). Verified on the user's account: `GET /locations/{id}`
    returns them (the list endpoint returned nulls). Manual override always available.
-4. Sunset offsets configurable. Defaults match the Samsung built-in: ON 10 min before sunset, OFF 40 min after.
+4. Sunset offsets configurable. The user chose to keep his current values: ON 60 min before sunset, OFF 90 min after, Yom Kippur included (2026-10-28). Library defaults (10/40) mirror the Samsung built-in.
 5. Free hosting, no payment, no personal data in the repo.
 6. Honest about failure: if the fridge refuses the command we say so, we do not pretend.
 7. Tested against known dates (section 6).
@@ -71,10 +71,42 @@ holiday early; the weekly ON/OFF pair becomes redundant once dated actions cover
 Dry run: `diffRules(existing, desired, deviceId)` lists what is missing, what is extra, and which weekly rules
 exist. It reads data only and sends nothing.
 
-### C. External scheduler calling the Devices API (optional safety layer)
-Cron every 5 minutes computes whether "now" is inside a block, reads the fridge's Sabbath status, and sends a
-command only when it differs. Useful if a rule fails to fire, but needs hosting and a long-lived OAuth app.
-Defer until B is proven.
+### C. External scheduler that reconciles the fridge every few minutes
+A hosted cron (Cloudflare Workers, free) computes whether "now" is inside a block, reads the fridge's Sabbath
+status, and sends a command only when it differs.
+
+### B vs C for "works automatically in all future years"
+
+The user wants no yearly chore. Both options need a free host and a SmartThings OAuth app (PATs last 24 hours).
+They differ in what must stay alive.
+
+| | B2: service keeps dated Rules rolled forward | C: service sends every command |
+| --- | --- | --- |
+| Who runs ON/OFF | SmartThings itself, from installed Rules | Our service, every 5 min |
+| If our host or OAuth breaks | Fridge keeps working until the last installed date (about 12 months buffer) | Next Shabbat is missed. A failed ON before candle lighting cannot be fixed during Shabbat |
+| Service must run | About once a week (extend horizon) | Every 5 minutes, all year, around candle lighting |
+| Free-tier fit | Trivial (a few API calls a week) | About 8,600 invocations a month, within 100,000 per day, but a tighter dependency |
+| Time precision | SmartThings Sunset engine, same as today's rules | Our own sunset math, polled in 5 minute steps |
+| Visibility to user | Rules visible in the SmartThings app, can be disabled there | Invisible logic in our host |
+| Risk | Rule limits (actions per rule, rules per location) unknown | Needs Samsung cloud and our cloud both up at Shabbat entry |
+
+Decision: B2 as the primary. The service is a weekly "make sure the next 12 months of dated Rules exist"
+job. It owns only rules whose names start with `shabbat-fridge` and never edits the user's other rules. It
+diffs desired and existing actions (`diffRules`), adds missing ones, and prunes dates in the past. Each run is
+idempotent, so missed weeks are harmless. C stays available as a verify-only watchdog later (Friday afternoon:
+read the status and the installed rules, alert if ON is not scheduled).
+
+Why this survives the token problem: refresh tokens are single-use, and an unused refresh token may expire
+(lifetime **UNVERIFIED**, not stated on the token-management page). A weekly run keeps the chain alive, and if the
+service dies the installed rules still cover the buffer. Storage for the rotating token: one record that only
+the weekly job writes, so Workers KV free tier (1 write/sec per key, 1,000 writes/day) is enough. The write
+must be done before the new access token is used.
+
+Interim: before the service exists, install the first 12 months of rules by hand with a 24 hour token. It gives
+value now, and the service later extends the same rules.
+
+Open: Rules guardrails (actions per rule, rules per location) are not on the public rate-limit page we found;
+measure by installing a test rule. Group actions into one rule per quarter until measured.
 
 ### D. SmartApp (webhook) or Edge driver
 Edge drivers need a Hub; webhook SmartApp is C plus subscriptions. Not needed.
@@ -85,10 +117,11 @@ Edge drivers need a Hub; webhook SmartApp is C plus subscriptions. Not needed.
 - `rules` (done): `blocksToActions`, `buildRule`, `diffRules` with tests; JSON shape copied from the user's own rules.
 - `smartthings` client (needed for install; read-only list/diff first): list locations and devices, read `samsungce.sabbathMode` status, send commands,
   token refresh.
-- `reconciler`: pure function `(now, blocks, deviceState) -> command | none`, unit tested.
-- `host`: Cloudflare Worker with a 5-minute Cron Trigger (free plan), state in free storage.
-  Alternative: GitHub Actions cron (best effort timing, minutes of delay, auto-disabled after 60 days without
-  repo activity). Cloudflare is preferred. **OPEN**: which account, see section 8.
+- `planner`: pure function from (today, place, settings, existing managed rules) to the rules to add and the past entries to remove; built on `computeBlocks` and `diffRules`, unit tested.
+- `watchdog` (later, optional): read-only Friday check that ON is scheduled.
+- `host`: Cloudflare Worker with a weekly Cron Trigger (free plan) that extends the rolling 12 month horizon; token record in Workers KV.
+  Alternative: GitHub Actions weekly cron (fine for a weekly job, but auto-disabled after 60 days without repo
+  activity and it cannot store a rotating token safely without a PAT). Cloudflare is preferred. **OPEN**: which account, see section 8.
 - Config: place (auto from SmartThings Location or manual), offsets, Yom Kippur, device selection.
 - Status page / notification: later.
 
@@ -142,6 +175,7 @@ recorded SmartThings responses; an end-to-end dry run that logs commands without
 2. A read-only test: he creates a 24-hour SmartThings token (read devices, read locations) so we can list the
    device, its capabilities, the Location coordinates and country. No commands sent. Token via a vault link.
 3. A one-time write test on a weekday (ON for 2 minutes, then OFF) with his go-ahead at the fridge.
-4. Production OAuth app: he signs in to his Samsung/SmartThings developer access to authorize it.
+4. Production OAuth app (needed for automatic yearly extension): he authorizes it once with his Samsung account.
+   Interim: a 24 hour token with Rules write for a first 12 month install.
 5. Hosting account: use the existing free Cloudflare account or ask him to create one.
 6. Yom Kippur on or off.
