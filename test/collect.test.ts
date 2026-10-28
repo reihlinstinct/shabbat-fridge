@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { eventKey, isExpired, isMonthExpired, newEventLines, parseRetainDays } from '../src/collect.js';
-import { SmartThings, type HistoryEvent } from '../src/smartthings.js';
+import { SmartThings, type Fetch, type HistoryEvent } from '../src/smartthings.js';
 
 const ev = (o: Partial<HistoryEvent>): HistoryEvent => ({ time: '2026-10-24T16:27:01.000+00:00', epoch: 1, hash: 7, capability: 'samsungce.sabbathMode', attribute: 'status', value: 'off', ...o });
 
@@ -78,5 +78,15 @@ describe('error hygiene', () => {
   it('an HTTP error never includes the body either', async () => {
     const fetcher = (async () => new Response('CANARY-BODY', { status: 500 })) as typeof fetch;
     await expect(new SmartThings('t', fetcher).locations()).rejects.toThrow(/HTTP 500$/);
+  });
+});
+
+describe('SmartThings.rules', () => {
+  const reply = (body: string): Fetch => (async () => ({ ok: true, status: 200, text: async () => body }) as unknown as Response) as Fetch;
+  it('treats an empty object (what an OAuth-In app token gets when it owns no rules) as no rules', async () => {
+    expect(await new SmartThings('t', reply('{}')).rules('L')).toEqual([]);
+  });
+  it('still returns the items when present', async () => {
+    expect(await new SmartThings('t', reply('{"items":[{"id":"r1"}]}')).rules('L')).toEqual([{ id: 'r1' }]);
   });
 });

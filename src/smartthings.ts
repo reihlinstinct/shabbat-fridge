@@ -108,7 +108,8 @@ export class SmartThings {
     return this.call('GET', `/apps/${appId}/oauth`);
   }
   async rules(locationId: string): Promise<StRuleSummary[]> {
-    return (await this.call<{ items: StRuleSummary[] }>('GET', `/rules?locationId=${locationId}`)).items;
+    // With an OAuth-In app token the Rules API answers 200 with an empty object ({}) when the app owns no rules (seen live), not with an empty items list.
+    return (await this.call<{ items?: StRuleSummary[] }>('GET', `/rules?locationId=${locationId}`)).items ?? [];
   }
   rule(locationId: string, id: string): Promise<StRule> {
     return this.call('GET', `/rules/${id}?locationId=${locationId}`);
