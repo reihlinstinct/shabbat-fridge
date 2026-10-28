@@ -137,16 +137,22 @@ describe('collector and keepalive (strict)', () => {
     });
     it('runs the steps in the designed order', () => {
       const ids = collect.steps!.map((s) => s.id).filter(Boolean);
-      expect(ids).toEqual(['read', 'rotate', 'push-state', 'collect', 'push-logs', 'seal', 'push-cursor']);
+      expect(ids).toEqual(['read', 'rotate', 'backup', 'push-state', 'collect', 'push-logs', 'seal', 'push-cursor']);
     });
     it('treats the cursor seal and push as warnings only', () => {
       const byId = Object.fromEntries(collect.steps!.map((s) => [s.id, s]));
       expect(byId.seal!['continue-on-error']).toBe(true);
       expect(byId['push-cursor']!['continue-on-error']).toBe(true);
-      for (const id of ['read', 'rotate', 'push-state', 'collect', 'push-logs']) expect(byId[id]!['continue-on-error']).toBeUndefined();
+      for (const id of ['read', 'rotate', 'backup', 'push-state', 'collect', 'push-logs']) expect(byId[id]!['continue-on-error']).toBeUndefined();
     });
     it('keeps state and the token file under RUNNER_TEMP, never in the checkout', () => {
       for (const s of collect.steps!) for (const v of Object.values(s.env ?? {})) if (/FILE|OUT|DIR/.test(Object.keys(s.env ?? {}).find((k) => s.env![k] === v) ?? '')) expect(v).toContain('runner.temp');
+    });
+    it('backs up the rotated ciphertext right after rotate, before any push, and only when rotated', () => {
+      const ids = collect.steps!.map((s) => s.id);
+      expect(ids.indexOf('backup')).toBe(ids.indexOf('rotate') + 1);
+      expect(ids.indexOf('backup')).toBeLessThan(ids.indexOf('push-state'));
+      expect(collect.steps![ids.indexOf('backup')]!.if).toContain("steps.rotate.outputs.rotated == 'true'");
     });
     it('uploads only the sealed state artifact', () => {
       const up = collect.steps!.filter((s) => s.uses?.startsWith('actions/upload-artifact@'));

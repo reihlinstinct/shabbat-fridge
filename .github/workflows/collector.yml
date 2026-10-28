@@ -47,6 +47,14 @@ jobs:
           STATE_FILE: ${{ runner.temp }}/state/oauth.enc.json
           TOKEN_OUT: ${{ runner.temp }}/st.token
         run: npx --no-install tsx scripts/collector-rotate.ts
+      - name: Keep a short-lived ciphertext copy of the rotated state (before the push, so a failed push cannot lose the new token)
+        id: backup
+        if: steps.rotate.outputs.rotated == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: sealed-state
+          path: ${{ runner.temp }}/state/oauth.enc.json
+          retention-days: 1
       - name: Push the rotated state first
         id: push-state
         if: steps.rotate.outputs.rotated == 'true'
@@ -55,13 +63,6 @@ jobs:
           STATE_FILE: ${{ runner.temp }}/state/oauth.enc.json
           STATE_SHA_FILE: ${{ runner.temp }}/state.sha
         run: npx --no-install tsx scripts/store.ts write-state
-      - name: Keep a short-lived ciphertext copy of the rotated state
-        if: steps.rotate.outputs.rotated == 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: sealed-state
-          path: ${{ runner.temp }}/state/oauth.enc.json
-          retention-days: 1
       - name: Collect one encrypted chunk
         id: collect
         env:
