@@ -23,6 +23,10 @@ on:
         default: '90'
       reenter_minutes_after_sunset:
         default: '100'
+      weekly_rules:
+        description: 'Also manage the weekly Shabbat rule "shabbat-fridge weekly" (Friday ON, Saturday OFF). Leave off if you already have your own weekly rules.'
+        type: boolean
+        default: false
       include_yom_kippur:
         type: boolean
         default: true
@@ -49,6 +53,7 @@ jobs:
           ENTRY: ${{ inputs.entry_minutes_before_sunset }}
           EXIT: ${{ inputs.exit_minutes_after_sunset }}
           REENTER: ${{ inputs.reenter_minutes_after_sunset }}
+          WEEKLY_RULES: ${{ inputs.weekly_rules }}
           YOM_KIPPUR: ${{ inputs.include_yom_kippur }}
           DEVICE_ID: YOUR-DEVICE-ID
           MODE: holiday

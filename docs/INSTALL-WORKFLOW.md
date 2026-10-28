@@ -98,3 +98,15 @@ The workflow **Check Hebcal fixture** (manual, and every January 1; GitHub may d
 refresh with `npx tsx scripts/refresh-fixture.ts`.
 Limit: Hebcal and our calendar core both use the same Hebrew calendar rules (the standard fixed calendar), so this guards against
 bugs and drift, not against a different halachic custom.
+
+## Optional weekly Shabbat rule / חוק שבת שבועי (אופציונלי)
+
+Input `weekly_rules` (default **off**) in both workflows adds one rule named `shabbat-fridge weekly`: Friday ON at sunset minus the entry
+offset (60) and Saturday OFF at sunset plus the exit offset (90), repeating every week. Use it when the fridge has no weekly rules yet.
+If you already have your own weekly rules (for example "Shabbat mode" and "Weekday Mode"), leave it off: they stay untouched.
+Running the install workflow with it on creates the rule once; running it again shows `unchanged`. Turning the input off later does not
+delete it (Prune only removes yearly holiday rules); delete it in SmartThings if you no longer want it.
+
+Interplay with the holiday re-ON: the +100 re-ON on a Saturday before a holiday only works if the weekly Saturday OFF fires **before** it.
+So the weekly OFF offset must be smaller than the re-ON offset: the workflow refuses `exit >= re-ON`. If one of your own weekly rules turns
+the mode off at or after the re-ON, the install summary prints a WARNING, because that rule would end the holiday early.

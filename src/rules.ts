@@ -186,3 +186,44 @@ export function rulesByYear(prefix: string, actions: EveryAction[]): Rule[] {
   }
   return [...byYear.entries()].sort((x, y) => x[0] - y[0]).map(([y, acts]) => ({ name: `${prefix} ${y}`, actions: acts }));
 }
+
+export const WEEKLY_RULE_NAME = 'shabbat-fridge weekly';
+
+export interface WeeklyOptions {
+  deviceId: string;
+  entryMinutesBeforeSunset?: number;
+  exitMinutesAfterSunset?: number;
+  /** The holiday re-ON offset. The weekly Saturday OFF must fire before it, or the re-ON would be undone. */
+  reenterMinutesAfterSunset?: number;
+}
+
+/**
+ * Optional weekly Shabbat rule: Friday ON at sunset - entry, Saturday OFF at sunset + exit, one rule with two
+ * repeating actions. The holiday design (holidayOnlyActions) assumes this OFF fires before the +reenter ON,
+ * so exit must be smaller than reenter; otherwise this throws.
+ */
+export function weeklyRule(opts: WeeklyOptions): Rule {
+  const entry = opts.entryMinutesBeforeSunset ?? 60;
+  const exit = opts.exitMinutesAfterSunset ?? 90;
+  const reenter = opts.reenterMinutesAfterSunset ?? 100;
+  if (!(exit < reenter)) throw new Error(`Saturday OFF (+${exit} min) must fire before the holiday re-ON (+${reenter} min); lower exit or raise re-ON`);
+  const act = (day: 'Fri' | 'Sat', offset: number, command: 'on' | 'off'): EveryAction =>
+    ({
+      every: {
+        specific: { daysOfWeek: [day], reference: 'Sunset', offset: { value: { integer: offset }, unit: 'Minute' } },
+        actions: [{ command: { devices: [opts.deviceId], commands: [{ component: 'main', capability: CAPABILITY, command }] } }],
+      },
+    }) as unknown as EveryAction; // weekly entries carry daysOfWeek instead of a date
+  return { name: WEEKLY_RULE_NAME, actions: [act('Fri', -entry, 'on'), act('Sat', exit, 'off')] };
+}
+
+/**
+ * Existing weekly OFF actions on this device that fire at or after the holiday re-ON. They would turn the mode off
+ * again right after the re-ON, ending a holiday early. Returns human-readable descriptions (empty when fine).
+ */
+export function lateWeeklyOffs(existing: Rule[], deviceId: string, reenter: number): string[] {
+  return entriesOf(existing, deviceId).weekly.filter((w) => {
+    const m = /^(.*) off ([+-]\d+)$/.exec(w);
+    return !!m && m[1]!.split(',').includes('Sat') && Number(m[2]) >= reenter;
+  });
+}

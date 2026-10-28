@@ -1,7 +1,9 @@
 import type { Rule } from './rules.js';
 
 /** Only rules whose name matches this are ever created, changed or deleted. */
-export const MANAGED_NAME = /^shabbat-fridge holidays \d{4}$/;
+export const MANAGED_NAME = /^shabbat-fridge (holidays \d{4}|weekly)$/;
+/** Pruning only ever removes yearly holiday rules, never the weekly rule. */
+const PRUNABLE = /^shabbat-fridge holidays \d{4}$/;
 
 export interface ExistingRule extends Rule {
   id: string;
@@ -41,7 +43,7 @@ export function planInstall(existing: ExistingRule[], desired: Rule[], prune = f
   }
   if (prune) {
     const wanted = new Set(desired.map((d) => d.name));
-    for (const r of managed) if (!wanted.has(r.name) && !plan.remove.some((x) => x.id === r.id)) plan.remove.push({ id: r.id, name: r.name });
+    for (const r of managed) if (PRUNABLE.test(r.name) && !wanted.has(r.name) && !plan.remove.some((x) => x.id === r.id)) plan.remove.push({ id: r.id, name: r.name });
   }
   return plan;
 }

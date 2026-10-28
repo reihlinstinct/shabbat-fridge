@@ -24,6 +24,10 @@ on:
         type: choice
         options: [auto, israel, diaspora]
         default: auto
+      weekly_rules:
+        description: 'Also manage the weekly Shabbat rule "shabbat-fridge weekly" (Friday ON, Saturday OFF). Leave off if you already have your own weekly rules.'
+        type: boolean
+        default: false
       prune:
         description: 'Also remove our rules for years no longer generated'
         type: boolean
@@ -54,5 +58,6 @@ jobs:
           REENTER: ${{ inputs.reenter_minutes_after_sunset }}
           YOM_KIPPUR: ${{ inputs.include_yom_kippur }}
           CALENDAR: ${{ inputs.calendar }}
+          WEEKLY_RULES: ${{ inputs.weekly_rules }}
           PRUNE: ${{ inputs.prune }}
         run: npx tsx scripts/install.ts

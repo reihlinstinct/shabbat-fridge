@@ -1,7 +1,7 @@
 /**
  * Generate SmartThings Rules JSON. Reads settings from the environment so no private data lives in the repo.
  *   LAT, LON, TZ, ISRAEL=true|false, DEVICE_ID, START=YYYY-MM-DD, YEARS=10,
- *   MODE=holiday|merged, ENTRY=60, EXIT=90, REENTER=100, YOM_KIPPUR=true|false, OUT=/path/out.json
+ *   WEEKLY_RULES=true|false (add the optional weekly Friday ON / Saturday OFF rule), MODE=holiday|merged, ENTRY=60, EXIT=90, REENTER=100, YOM_KIPPUR=true|false, OUT=/path/out.json
  * Output is a JSON array of rules (one per year), ready for `smartthings rules:create -i` one rule at a time
  * or for the Rules API. Nothing here talks to SmartThings.
  */
@@ -9,7 +9,7 @@ import { writeFileSync } from 'node:fs';
 import { HDate } from '@hebcal/core';
 import { computeBlocks, sunset } from '../src/blocks.js';
 import { crossCheckOrThrow } from '../src/crosscheck.js';
-import { blocksToActions, holidayOnlyActions, rulesByYear } from '../src/rules.js';
+import { blocksToActions, holidayOnlyActions, rulesByYear, weeklyRule } from '../src/rules.js';
 
 const env = (k: string, d?: string): string => {
   const v = process.env[k] ?? d;
@@ -36,6 +36,7 @@ const opts = { deviceId: env('DEVICE_ID'), entryMinutesBeforeSunset: entry, exit
 const mode = env('MODE', 'holiday');
 const actions = mode === 'merged' ? blocksToActions(blocks, opts) : holidayOnlyActions(blocks, opts);
 const rules = rulesByYear(mode === 'merged' ? 'shabbat-fridge full' : 'shabbat-fridge holidays', actions);
+if (env('WEEKLY_RULES', 'false') === 'true') rules.unshift(weeklyRule({ ...opts, entryMinutesBeforeSunset: entry, exitMinutesAfterSunset: exit }));
 writeFileSync(env('OUT'), JSON.stringify(rules, null, 2));
 console.log(`${mode}: ${blocks.length} blocks, ${actions.length} actions, ${rules.length} rules (${rules.map((r) => r.actions.length).join(',')})`);
 
