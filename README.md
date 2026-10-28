@@ -26,6 +26,8 @@ npm test
 npm run typecheck
 ```
 
+[docs/INSTALL-WORKFLOW.md](docs/INSTALL-WORKFLOW.md) explains the GitHub Actions installer (dry run first, token as a repo secret).
+
 `scripts/generate.ts` writes the Rules JSON from environment settings (no private data in the repo).
 
 `src/rules.ts` turns blocks into dated, Sunset-relative SmartThings Rules actions and diffs them against existing rules (dry run).

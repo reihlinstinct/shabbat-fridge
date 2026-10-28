@@ -8,6 +8,7 @@
 import { writeFileSync } from 'node:fs';
 import { HDate } from '@hebcal/core';
 import { computeBlocks, sunset } from '../src/blocks.js';
+import { crossCheckOrThrow } from '../src/crosscheck.js';
 import { blocksToActions, holidayOnlyActions, rulesByYear } from '../src/rules.js';
 
 const env = (k: string, d?: string): string => {
@@ -27,6 +28,10 @@ const place = {
   israel: env('ISRAEL', 'true') === 'true',
 };
 const blocks = computeBlocks(place, start, end, { entryMinutesBeforeSunset: entry, exitMinutesAfterSunset: exit, includeYomKippur: env('YOM_KIPPUR', 'true') === 'true' });
+if (process.env.CROSSCHECK !== 'false') {
+  const n = await crossCheckOrThrow(blocks, place.israel, env('START'), `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`, env('YOM_KIPPUR', 'true') === 'true');
+  console.log(`Cross-check: ${n} Yom Tov days match the Hebcal web API`);
+}
 const opts = { deviceId: env('DEVICE_ID'), entryMinutesBeforeSunset: entry, exitMinutesAfterSunset: exit, reenterMinutesAfterSunset: Number(env('REENTER', '100')) };
 const mode = env('MODE', 'holiday');
 const actions = mode === 'merged' ? blocksToActions(blocks, opts) : holidayOnlyActions(blocks, opts);

@@ -1,0 +1,68 @@
+# Install the holiday rules with GitHub Actions / התקנת חוקי החגים עם GitHub Actions
+
+The workflow **Install holiday rules** (`.github/workflows/install-rules.yml`) creates or updates the SmartThings
+rules named `shabbat-fridge holidays YYYY` (one per year, 10 years). It never touches any other rule (your weekly
+Shabbat rules stay as they are). It starts as a dry run.
+
+הפעולה **Install holiday rules** יוצרת או מעדכנת רק חוקים בשם `shabbat-fridge holidays YYYY` (חוק לכל שנה).
+היא לא נוגעת באף חוק אחר, כולל חוקי השבת השבועיים. ברירת המחדל היא הרצה יבשה (בלי כתיבה).
+
+## 1. Create the SmartThings token / יצירת הטוקן
+
+1. Open https://account.smartthings.com/tokens and sign in with your Samsung account.
+2. **Generate new token**, name it `shabbat-rules`.
+3. Tick only these scopes / סמן רק:
+   - Rules: read, write, execute (`r:rules:*`, `w:rules:*`, `x:rules:*`)
+   - Devices: list and see (`r:devices:*`)
+   - Locations: see (`r:locations:*`)
+   Do not tick device control (`x:devices`). The rules run on Samsung's side; this token never sends a command to the fridge.
+4. Copy the token. A token is valid for 24 hours, so do the next steps now. It is shown once.
+
+פתחו את הקישור, צרו טוקן חדש עם ההרשאות למעלה (בלי שליטה במכשירים), והעתיקו אותו. הטוקן תקף ל-24 שעות.
+
+## 2. Save it as a GitHub secret / שמירה כ-Secret
+
+In the repository: **Settings > Secrets and variables > Actions > New repository secret**.
+Name: `SMARTTHINGS_TOKEN`. Value: the token. (You need write access to the repo.)
+Or with the GitHub CLI: `gh secret set SMARTTHINGS_TOKEN --repo reihlinstinct/shabbat-fridge`
+
+The workflow reads it as a secret. It is masked in logs, is not available to pull requests from forks, and is never printed.
+Do not paste the token into the workflow inputs (inputs are visible in the run).
+
+## 3. Run it: dry run first / הרצה
+
+**Actions > Install holiday rules > Run workflow.** Leave **Dry run** ticked and run.
+Open the run summary. It lists: calendar (Israel or Diaspora), time zone, offsets, and the plan
+(create / update / unchanged / remove), plus how many other rules are left alone. Nothing is written.
+
+Then run again with **Dry run** unticked to apply. The job reads the rules back and prints
+`rules match the plan; other rules unchanged: true`. If it prints MISMATCH, nothing else is touched; run the dry run again.
+
+Defaults: ON 60 minutes before sunset, OFF 90 minutes after, re-ON 100 minutes after sunset on a Saturday followed by a
+holiday, Yom Kippur included, 10 years. Location, country, time zone and the fridge are read from SmartThings
+(the one location, and the single device with `samsungce.sabbathMode`). If you have several, the run stops and says what to set.
+
+Running again is safe: with no changes the plan is empty.
+
+## 4. Revoke it / ביטול
+
+- Delete the token at https://account.smartthings.com/tokens (it expires by itself after 24 hours).
+- Delete the secret: **Settings > Secrets and variables > Actions**, delete `SMARTTHINGS_TOKEN`
+  (or `gh secret delete SMARTTHINGS_TOKEN --repo reihlinstinct/shabbat-fridge`).
+
+The rules already installed keep running on Samsung's servers after the token is gone.
+
+## Generate the JSON only / יצירת ה-JSON בלבד
+
+**Actions > Generate holiday rules JSON > Run workflow.** It needs no token. It computes 10 rolling years from today with the
+calendar core, cross-checks every Yom Tov day against the public Hebcal web API (it fails if they disagree), and uploads
+an artifact `holiday-rules` with `holiday-rules.json` (a placeholder device id: `YOUR-DEVICE-ID`) and an annotated
+`holiday-schedule.md` (Hebrew and English holiday names, Hebrew dates, each ON/OFF with its sunset offset).
+Defaults are Jerusalem and the Israel calendar; change latitude, longitude, time zone or untick Israel for another place.
+
+The install workflow does not use this artifact: it recomputes the same rules itself, reading the location (country, time zone,
+coordinates) and the fridge from your SmartThings account, and runs the same Hebcal cross-check before writing anything.
+יצירת ה-JSON לא דורשת טוקן. הפעולה של ההתקנה מחשבת את אותם חוקים בעצמה ומשווה מול Hebcal לפני כתיבה.
+
+Rolling horizon: run the install workflow again any time (for example once a year). It extends the 10 years from the day it
+runs, replaces only our `shabbat-fridge holidays YYYY` rules, and with **Prune** also removes our rules for past years.

@@ -1,0 +1,61 @@
+name: Generate holiday rules JSON
+on:
+  workflow_dispatch:
+    inputs:
+      latitude:
+        description: 'Latitude (default Jerusalem city center)'
+        default: '31.769'
+      longitude:
+        default: '35.216'
+      timezone:
+        description: 'IANA time zone'
+        default: 'Asia/Jerusalem'
+      israel:
+        description: 'Israel calendar (one day Yom Tov). Untick for Diaspora.'
+        type: boolean
+        default: true
+      years:
+        default: '10'
+      entry_minutes_before_sunset:
+        default: '60'
+      exit_minutes_after_sunset:
+        default: '90'
+      reenter_minutes_after_sunset:
+        default: '100'
+      include_yom_kippur:
+        type: boolean
+        default: true
+permissions:
+  contents: read
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Generate rules and annotated schedule (cross-checked against the Hebcal web API)
+        env:
+          LAT: ${{ inputs.latitude }}
+          LON: ${{ inputs.longitude }}
+          TZ: ${{ inputs.timezone }}
+          ISRAEL: ${{ inputs.israel }}
+          YEARS: ${{ inputs.years }}
+          ENTRY: ${{ inputs.entry_minutes_before_sunset }}
+          EXIT: ${{ inputs.exit_minutes_after_sunset }}
+          REENTER: ${{ inputs.reenter_minutes_after_sunset }}
+          YOM_KIPPUR: ${{ inputs.include_yom_kippur }}
+          DEVICE_ID: YOUR-DEVICE-ID
+          MODE: holiday
+        run: |
+          mkdir -p out
+          export START="$(date -u +%F)"
+          OUT=out/holiday-rules.json SCHEDULE_MD=out/holiday-schedule.md npx tsx scripts/generate.ts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: holiday-rules
+          path: out/
