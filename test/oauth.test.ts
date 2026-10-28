@@ -17,7 +17,7 @@ const fake = (reply: () => Response, calls: Call[] = []): typeof fetch => (async
 describe('oauth client', () => {
   it('authorize URL carries client, scopes, redirect and state', () => {
     const u = new URL(authorizeUrl('CID', 'https://x.example/cb', SCOPES_INSTALL, 'n0nce'));
-    expect(u.origin + u.pathname).toBe('https://api.smartthings.com/v1/oauth/authorize');
+    expect(u.origin + u.pathname).toBe('https://api.smartthings.com/oauth/authorize');
     expect(u.searchParams.get('response_type')).toBe('code');
     expect(u.searchParams.get('scope')).toBe('r:locations:* r:devices:* r:rules:* w:rules:*');
     expect(u.searchParams.get('redirect_uri')).toBe('https://x.example/cb');

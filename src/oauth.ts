@@ -1,6 +1,7 @@
 import type { Fetch } from './smartthings.js';
 
-export const AUTH_URL = 'https://api.smartthings.com/v1/oauth/authorize';
+// The /v1 path returns an error for API_ONLY apps (verified live 2026-10-28); the token endpoint keeps /v1.
+export const AUTH_URL = 'https://api.smartthings.com/oauth/authorize';
 export const TOKEN_URL = 'https://api.smartthings.com/v1/oauth/token';
 
 /** Scopes for the collector (read) and the rule installer (read and write rules). */
