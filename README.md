@@ -3,7 +3,7 @@
 Sets Shabbat / Yom Tov mode on Samsung SmartThings appliances (first target: a Samsung fridge) from the
 Jewish calendar and local sunset, instead of relying on the appliance's built-in weekly Shabbat timer.
 
-**Status: design and research phase.** Nothing here talks to SmartThings yet. See
+**Status: design phase.** The code computes and diffs rules; nothing here writes to SmartThings yet. See
 [docs/DESIGN.md](docs/DESIGN.md) and [docs/RESEARCH.md](docs/RESEARCH.md).
 
 ## The problem
@@ -25,6 +25,8 @@ npm ci
 npm test
 npm run typecheck
 ```
+
+`src/rules.ts` turns blocks into dated, Sunset-relative SmartThings Rules actions and diffs them against existing rules (dry run).
 
 Calendar and sunset data come from [@hebcal/core](https://github.com/hebcal/hebcal-es6) and run fully offline.
 

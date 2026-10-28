@@ -20,7 +20,8 @@ All links were read on 2026-10-28. "Community" means forum posts, not official g
   Noon and a minute offset. Rules run locally on a Hub when possible, else in the cloud. A rule installed by an
   owner can only be edited by that owner. https://developer.smartthings.com/docs/automations/rules
 - Rules samples: https://github.com/SmartThingsDevelopers/Sample-RulesAPI/blob/master/README.md
-- The community example uses `daysOfWeek` + `Sunset` + offset: weekday based, no calendar dates.
+- The community example uses `daysOfWeek` + `Sunset` + offset. The Rules API also accepts `year`, `month`, `day`
+  in `specific` (seen in the user's own rule, 2026-10-28), so dated Sunset-relative actions work.
 
 ## Auth and integration style
 
@@ -51,7 +52,6 @@ All links were read on 2026-10-28. "Community" means forum posts, not official g
 
 ## Not yet verified
 
-- SmartThings Location object fields (latitude, longitude, time zone, country code) on the user's account.
 - Whether this fridge accepts `on`/`off` through the API and still accepts `off` while the mode is on.
 - Whether the built-in Shabbat timer can be disabled.
 - Exact OAuth app creation flow today for a personal account.
