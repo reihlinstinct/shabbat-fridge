@@ -4,7 +4,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { RECORD_CONTEXT } from '../src/collectrun.js';
-import { decryptDir } from '../src/decryptlogs.js';
+import { randomBytes } from 'node:crypto';
+import { decryptDir, isCanonicalTime, writeLayout } from '../src/decryptlogs.js';
 import { chunkFileName, encryptLog, generateKeyPair } from '../src/logcrypt.js';
 import { gzipSync } from 'node:zlib';
 
@@ -53,6 +54,59 @@ describe('decryptDir', () => {
     const t = tree();
     t.put(seal({ hello: 'world' }));
     expect(decryptDir(t.logs, keys.privateKey).failed).toBe(1);
+  });
+});
+
+describe('decryptDir hardening', () => {
+  it('rejects non-canonical takenAt, including path-like text, as a failed chunk', () => {
+    const t = tree();
+    for (const bad of ['../../2026-10-28', '2026-10-28', '2026-10-28T10:00:00Z', '2026-10-28T10:00:00.000+02:00', '2026-13-45T10:00:00.000Z', '']) t.put(seal(rec(bad, [])));
+    const r = decryptDir(t.logs, keys.privateKey);
+    expect(r.records).toHaveLength(0);
+    expect(r.failed).toBe(6);
+    expect(isCanonicalTime('2026-10-28T10:00:00.000Z')).toBe(true);
+  });
+  it('fails a chunk whose events are missing k, have a non-string k, or an unparseable time', () => {
+    const t = tree();
+    t.put(seal(rec('2026-10-28T10:00:00.000Z', [{ time: '2026-10-28T09:00:00Z' } as never])));
+    t.put(seal(rec('2026-10-28T10:00:00.000Z', [{ k: 5, time: '2026-10-28T09:00:00Z' } as never])));
+    t.put(seal(rec('2026-10-28T10:00:00.000Z', [{ k: 'a', time: '../x' }])));
+    t.put(seal(rec('2026-10-28T10:00:00.000Z', [null as never])));
+    const r = decryptDir(t.logs, keys.privateKey);
+    expect(r.failed).toBe(4);
+    expect(r.records).toHaveLength(0);
+  });
+  it('writeLayout never writes outside OUT_DIR even when handed a hostile record', () => {
+    const root = mkdtempSync(join(tmpdir(), 'wl-'));
+    const out = join(root, 'out');
+    mkdirSync(out);
+    expect(() => writeLayout(out, [rec('../../x', [])] as never)).toThrow();
+    expect(() => writeLayout(out, [rec('2026-10-28T10:00:00.000Z', [{ k: 'a', time: '../../q' }])] as never)).toThrow();
+    expect(readdirSync(root)).toEqual(['out']);
+  });
+  it('reassembles a record that spans several chunks', () => {
+    const t = tree();
+    const events = Array.from({ length: 1500 }, (_, i) => ({ k: randomBytes(12).toString('hex') + i, time: '2026-10-28T09:00:00Z' }));
+    const chunks = encryptLog(gzipSync(Buffer.from(JSON.stringify(rec('2026-10-28T10:00:00.000Z', events)))), keys.publicKey, RECORD_CONTEXT);
+    expect(chunks.length).toBeGreaterThan(1);
+    for (const c of chunks) t.put(c);
+    const r = decryptDir(t.logs, keys.privateKey);
+    expect(r.failed).toBe(0);
+    expect(r.records).toHaveLength(1);
+    expect(r.records[0]!.events).toHaveLength(1500);
+    t.put(Buffer.from('x'));
+    expect(decryptDir(t.logs, keys.privateKey).failed).toBe(1);
+  });
+  it('fails loudly when the chunks directory is empty, and chmods an existing empty OUT_DIR to 0700', () => {
+    const t = tree();
+    const r = run(['decrypt'], { LOGS_DIR: t.logs, OUT_DIR: t.out, LOGS_PRIVATE_KEY_FILE: t.keyFile });
+    expect(r.stdout.trim()).toBe('decrypt-logs failed: no-chunks');
+    t.put(seal(rec('2026-10-28T10:00:00.000Z', [])));
+    mkdirSync(join(t.root, 'wide'), { mode: 0o755 });
+    chmodSync(join(t.root, 'wide'), 0o755);
+    const ok = run(['decrypt'], { LOGS_DIR: t.logs, OUT_DIR: join(t.root, 'wide'), LOGS_PRIVATE_KEY_FILE: t.keyFile });
+    expect(ok.status).toBe(0);
+    expect(statSync(join(t.root, 'wide')).mode & 0o777).toBe(0o700);
   });
 });
 

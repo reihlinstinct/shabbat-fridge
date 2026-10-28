@@ -2,7 +2,7 @@
  * Local decryption of collector chunks (docs/ENCRYPTED-LOGS-COLLECTOR.md, c4). Runs on the owner's side only, never in CI.
  * Pure over a directory and a key: errors carry fixed codes, never key bytes, paths of keys or decrypted text.
  */
-import { lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve, sep } from 'node:path';
 import { gunzipSync } from 'node:zlib';
 import { RECORD_CONTEXT } from './collectrun.js';
@@ -10,6 +10,27 @@ import { assemble, decryptChunk, type Decrypted } from './logcrypt.js';
 import { CodedError, type LogRecord } from './record.js';
 
 const NAME = /^[0-9a-f]{32}\.bin$/;
+const CANON = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+const MONTH = /^\d{4}-\d{2}$/;
+
+/** A strict canonical UTC timestamp (what Date.toISOString prints). Anything else is rejected. */
+export const isCanonicalTime = (t: unknown): t is string => typeof t === 'string' && CANON.test(t) && Number.isFinite(Date.parse(t)) && new Date(t).toISOString() === t;
+/** The month of any parseable time, derived from the parsed date only, so no input text reaches a path. */
+export function monthOf(t: unknown): string {
+  const ms = typeof t === 'string' ? Date.parse(t) : NaN;
+  if (!Number.isFinite(ms)) throw new CodedError('bad-time');
+  const m = new Date(ms).toISOString().slice(0, 7);
+  if (!MONTH.test(m)) throw new CodedError('bad-time');
+  return m;
+}
+const validEvents = (events: unknown): boolean =>
+  Array.isArray(events) && events.every((e) => e !== null && typeof e === 'object' && typeof (e as { k?: unknown }).k === 'string' && (e as { k: string }).k !== '' && (() => { try { monthOf((e as { time?: unknown }).time); return true; } catch { return false; } })());
+
+function inside(root: string, path: string): boolean {
+  const r = resolve(root);
+  const p = resolve(path);
+  return p === r || p.startsWith(r + sep);
+}
 
 /** True when the path or any ancestor holds a `.git` entry (directory or file). The path itself need not exist. */
 export function insideWorktree(path: string): boolean {
@@ -72,6 +93,7 @@ export function prepareOutDir(out: string, logsDir: string): string {
   try {
     if (!statSync(real).isDirectory()) throw new CodedError('out-not-dir');
     if (readdirSync(real).length > 0) throw new CodedError('out-not-empty');
+    chmodSync(real, 0o700);
   } catch (e) {
     if (e instanceof CodedError) throw e;
     mkdirSync(real, { recursive: true, mode: 0o700 });
@@ -95,6 +117,7 @@ export function decryptDir(logsDir: string, privateKey: string): DecryptResult {
   } catch {
     throw new CodedError('no-chunks-dir');
   }
+  if (names.length === 0) throw new CodedError('no-chunks');
   let failed = 0;
   const groups = new Map<string, Decrypted[]>();
   for (const n of names) {
@@ -113,7 +136,7 @@ export function decryptDir(logsDir: string, privateKey: string): DecryptResult {
   for (const parts of groups.values()) {
     try {
       const r = JSON.parse(gunzipSync(assemble(parts)).toString('utf8')) as LogRecord;
-      if (r === null || typeof r !== 'object' || r.v !== 1 || typeof r.takenAt !== 'string' || !Number.isFinite(Date.parse(r.takenAt)) || !Array.isArray(r.events)) throw new Error('shape');
+      if (r === null || typeof r !== 'object' || r.v !== 1 || !isCanonicalTime(r.takenAt) || !validEvents(r.events)) throw new Error('shape');
       records.push(r);
     } catch {
       failed += parts.length;
@@ -129,24 +152,28 @@ export function writeLayout(out: string, records: LogRecord[]): { snapshots: num
   const byMonth = new Map<string, string[]>();
   let snapshots = 0;
   const done = new Set<string>();
+  const dest = (...parts: string[]): string => {
+    const p = join(out, ...parts);
+    if (!inside(out, p)) throw new CodedError('path-escape');
+    return p;
+  };
   for (const r of records) {
     if (!done.has(r.takenAt)) {
       done.add(r.takenAt);
       const { events: _events, ...snap } = r;
-      const month = r.takenAt.slice(0, 7);
-      mkdirSync(join(out, 'snapshots', month), { recursive: true, mode: 0o700 });
-      writeFileSync(join(out, 'snapshots', month, `${r.takenAt.replace(/[:.]/g, '-')}.json`), JSON.stringify(snap, null, 1), { mode: 0o600 });
+      const dir = dest('snapshots', monthOf(r.takenAt));
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      writeFileSync(dest('snapshots', monthOf(r.takenAt), `${r.takenAt.replace(/[:.]/g, '-')}.json`), JSON.stringify(snap, null, 1), { mode: 0o600 });
       snapshots++;
     }
     for (const e of r.events) {
-      if (typeof e?.k !== 'string' || seen.has(e.k)) continue;
+      if (seen.has(e.k)) continue;
       seen.add(e.k);
-      const t = Date.parse(e.time);
-      const month = Number.isFinite(t) ? new Date(t).toISOString().slice(0, 7) : 'unknown';
+      const month = monthOf(e.time);
       byMonth.set(month, [...(byMonth.get(month) ?? []), JSON.stringify(e)]);
     }
   }
-  mkdirSync(join(out, 'events'), { recursive: true, mode: 0o700 });
-  for (const [m, lines] of byMonth) writeFileSync(join(out, 'events', `${m}.ndjson`), lines.join('\n') + '\n', { mode: 0o600 });
+  mkdirSync(dest('events'), { recursive: true, mode: 0o700 });
+  for (const [m, lines] of byMonth) writeFileSync(dest('events', `${m}.ndjson`), lines.join('\n') + '\n', { mode: 0o600 });
   return { snapshots, events: seen.size };
 }
