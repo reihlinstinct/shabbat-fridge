@@ -1,0 +1,52 @@
+name: Install holiday rules
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (plan only, nothing written). Set false to apply.'
+        type: boolean
+        default: true
+      years:
+        description: 'Years ahead to generate'
+        default: '10'
+      entry_minutes_before_sunset:
+        default: '60'
+      exit_minutes_after_sunset:
+        default: '90'
+      reenter_minutes_after_sunset:
+        description: 'Re-ON after a Saturday followed by a holiday'
+        default: '100'
+      include_yom_kippur:
+        type: boolean
+        default: true
+      prune:
+        description: 'Also remove our rules for years no longer generated'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: install-rules
+  cancel-in-progress: false
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Plan or install
+        env:
+          ST_TOKEN: ${{ secrets.SMARTTHINGS_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          YEARS: ${{ inputs.years }}
+          ENTRY: ${{ inputs.entry_minutes_before_sunset }}
+          EXIT: ${{ inputs.exit_minutes_after_sunset }}
+          REENTER: ${{ inputs.reenter_minutes_after_sunset }}
+          YOM_KIPPUR: ${{ inputs.include_yom_kippur }}
+          PRUNE: ${{ inputs.prune }}
+        run: npx tsx scripts/install.ts
