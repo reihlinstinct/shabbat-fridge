@@ -29,6 +29,26 @@ export interface RunInput {
   deviceId?: string;
 }
 
+type Caps = Record<string, Record<string, { value?: unknown } | undefined> | undefined>;
+const num = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+const time = (v: unknown): string | undefined => (typeof v === 'string' && Number.isFinite(Date.parse(v.split(' ')[0]!)) ? v.split(' ')[0] : undefined);
+/** Numbers only, from the two energy capabilities. Anything that is not a finite number or a parseable time is dropped. */
+export function energyOf(main: Caps | undefined): NonNullable<LogRecord['energy']> | undefined {
+  const pc = main?.powerConsumptionReport?.powerConsumption?.value as Record<string, unknown> | undefined;
+  const em = main?.['samsungce.energyManagement'];
+  const e = {
+    totalWh: num(pc?.energy),
+    deltaWh: num(pc?.deltaEnergy),
+    powerW: num(pc?.power),
+    windowStart: time(pc?.start),
+    windowEnd: time(pc?.end),
+    monthWh: num(em?.thisMonthEnergyConsumption?.value),
+    lastMonthWh: num(em?.lastMonthEnergyConsumption?.value),
+  };
+  const out = Object.fromEntries(Object.entries(e).filter(([, v]) => v !== undefined)) as NonNullable<LogRecord['energy']>;
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 export async function collectOnce(inp: RunInput): Promise<{ chunk: Buffer; cursor: string | undefined }> {
   const now = inp.now ?? new Date();
   const bucket = inp.bucket ?? DEFAULT_BUCKET;
@@ -41,19 +61,21 @@ export async function collectOnce(inp: RunInput): Promise<{ chunk: Buffer; curso
   const deviceId = inp.deviceId || (fridges.length === 1 ? fridges[0]!.deviceId : '');
   if (!deviceId) throw new CodedError('device-ambiguous');
 
-  const status = (await c.deviceStatus(deviceId)) as { components?: { main?: Record<string, { status?: { value?: string; timestamp?: string } }> } };
+  const status = (await c.deviceStatus(deviceId)) as { components?: { main?: Record<string, { status?: { value?: string; timestamp?: string } }> & Caps } };
   const sab = status.components?.main?.['samsungce.sabbathMode']?.status;
   const rules: LogRecord['rules'] = [];
   for (const s of await c.rules(locationId)) {
     const r = (await c.rule(locationId, s.id)) as Record<string, unknown>;
     rules.push({ id: r.id, name: r.name, status: r.status, dateExecuted: r.dateExecuted, dateUpdated: r.dateUpdated });
   }
+  const energy = energyOf(status.components?.main);
   const base: Omit<LogRecord, 'events'> = {
     v: 1,
     takenAt: now.toISOString(),
     place: { latitude: Number(loc.latitude), longitude: Number(loc.longitude), tzid: String(loc.timeZoneId ?? ''), countryCode: loc.countryCode ?? undefined },
     sabbath: sab?.value && sab.timestamp ? { value: sab.value, timestamp: sab.timestamp } : null,
     rules,
+    ...(energy ? { energy } : {}),
   };
   const { events, truncated } = await c.deviceHistoryResult(locationId, deviceId);
   const wanted = eventsSince(events, inp.cursor);

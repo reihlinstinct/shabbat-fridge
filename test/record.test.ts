@@ -275,3 +275,25 @@ describe('review follow-ups', () => {
     expect(existsSync(`${stateFile}.tmp`)).toBe(false);
   });
 });
+
+describe('energy counters', () => {
+  const full = { components: { main: {
+    'samsungce.sabbathMode': { status: { value: 'off', timestamp: '2026-10-24T16:27:01Z' } },
+    powerConsumptionReport: { powerConsumption: { value: { energy: 821934, deltaEnergy: 1, power: 1, powerEnergy: 0.4, start: '2026-10-28T13:30:18Z', end: '2026-10-28T13:43:42Z 2026-10-28T13:43:42Z', CANARY: 'x' } } },
+    'samsungce.energyManagement': { thisMonthEnergyConsumption: { value: 41979 }, lastMonthEnergyConsumption: { value: null } },
+  } } };
+  const runWith = async (status: unknown) => {
+    const c = { ...client([]), deviceStatus: async () => status } as Client;
+    const r = await collectOnce({ client: c, publicKey: kp.publicKey, cursor: undefined, now: new Date('2026-10-28T14:00:00Z') });
+    return read(r.chunk);
+  };
+  it('records finite numbers and parseable times from the two capabilities, and nothing else', async () => {
+    const rec = await runWith(full);
+    expect(rec.energy).toEqual({ totalWh: 821934, deltaWh: 1, powerW: 1, windowStart: '2026-10-28T13:30:18Z', windowEnd: '2026-10-28T13:43:42Z', monthWh: 41979 });
+  });
+  it('drops non-numbers and bad times, and omits the field when the device reports nothing', async () => {
+    const bad = { components: { main: { powerConsumptionReport: { powerConsumption: { value: { energy: 'CANARY', power: NaN, start: 'CANARY' } } }, 'samsungce.energyManagement': { thisMonthEnergyConsumption: { value: '5' } } } } };
+    expect((await runWith(bad)).energy).toBeUndefined();
+    expect((await runWith({ components: { main: {} } })).energy).toBeUndefined();
+  });
+});

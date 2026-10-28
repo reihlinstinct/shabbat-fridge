@@ -27,6 +27,8 @@ export interface LogRecord {
   takenAt: string;
   place: { latitude: number; longitude: number; tzid: string; countryCode?: string };
   sabbath: { value: string; timestamp: string } | null;
+  /** Energy counters (Wh, W) when the device reports them. Optional: older records and devices without the capability have none. */
+  energy?: { totalWh?: number; monthWh?: number; lastMonthWh?: number; deltaWh?: number; powerW?: number; windowStart?: string; windowEnd?: string };
   rules: Array<{ id: unknown; name: unknown; status: unknown; dateExecuted: unknown; dateUpdated: unknown }>;
   events: RecordEvent[];
 }
