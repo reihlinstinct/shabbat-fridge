@@ -117,5 +117,6 @@ If the WARNING appears, a weekly OFF fires at or after the re-ON. Either raise t
 or lower the weekly OFF (move your own rule or the `exit_minutes_after_sunset` input). The check looks at the rules that will exist after the run
 (your own rules, our weekly rule if it stays, and any unchanged rules), for this fridge only, and honors Minute and Hour offsets.
 The hard refusal (exit must be smaller than re-ON) runs only when `weekly_rules` is on, because only then do we create the OFF. With it off, you get the WARNING only.
-Prune removes yearly holiday rules; it does not remove `shabbat-fridge weekly`. If the weekly rule ever exists twice, the plan removes the duplicate copies
-(same name) and keeps one, with or without Prune.
+Prune removes yearly holiday rules; it does not remove `shabbat-fridge weekly`. When `weekly_rules` is on and the weekly rule exists twice, the plan removes the duplicate copies
+(same name) and keeps one, with or without Prune. With `weekly_rules` off nothing about the weekly rule is changed or cleaned up.
+With `weekly_rules` off, lowering `exit_minutes_after_sunset` cannot change a retained weekly rule: edit that rule yourself, turn on weekly management, or raise the re-ON.
