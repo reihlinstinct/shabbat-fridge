@@ -80,18 +80,22 @@ export class SmartThings {
   }
   /** Device event history (undocumented in the official reference, about 7 days). Pages until empty or maxPages. */
   async deviceHistory(locationId: string, deviceId: string, maxPages = 40): Promise<HistoryEvent[]> {
-    const out: HistoryEvent[] = [];
+    return (await this.deviceHistoryResult(locationId, deviceId, maxPages)).events;
+  }
+  /** Like deviceHistory, plus `truncated`: true when the page limit was hit while a next page still existed (oldest events are missing). */
+  async deviceHistoryResult(locationId: string, deviceId: string, maxPages = 40): Promise<{ events: HistoryEvent[]; truncated: boolean }> {
+    const events: HistoryEvent[] = [];
     let path = `/history/devices?locationId=${locationId}&deviceId=${deviceId}&limit=300`;
     for (let i = 0; i < maxPages; i++) {
       const page = await this.call<{ items?: HistoryEvent[]; _links?: { next?: { href?: string } } }>('GET', path);
-      out.push(...(page.items ?? []));
+      events.push(...(page.items ?? []));
       const next = page._links?.next?.href;
-      if (!page.items?.length || !next) break;
+      if (!page.items?.length || !next) return { events, truncated: false };
       // next is an absolute URL on the same host; keep only the path and query
       const u = new URL(next);
       path = `${u.pathname.replace(/^\/v1/, '')}${u.search}`;
     }
-    return out;
+    return { events, truncated: true };
   }
   /** Create an OAuth-In (API_ONLY) app. Needs a token with app-management scopes. */
   createApp(body: unknown): Promise<Record<string, unknown>> {

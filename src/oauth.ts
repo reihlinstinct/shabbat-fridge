@@ -19,6 +19,8 @@ export interface OAuthState {
   accessExpiresAt?: string;
   /** Random value bound to the authorization link and checked on code exchange (cleared afterwards). */
   pendingNonce?: string;
+  /** Collector cursor (ISO, hour resolution): history events older than this were already sent. Optional: old states have none. */
+  eventCursor?: string;
 }
 
 export interface TokenResponse {

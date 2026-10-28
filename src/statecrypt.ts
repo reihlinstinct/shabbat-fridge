@@ -46,9 +46,11 @@ export function open(sealed: Sealed, key: string): OAuthState {
 const str = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
 const tok = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 4096 && /^[\x21-\x7e]+$/.test(v);
 const optTok = (v: unknown): boolean => v === undefined || tok(v);
+const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/;
+const optIso = (v: unknown): boolean => v === undefined || (typeof v === 'string' && ISO.test(v) && Number.isFinite(Date.parse(v)));
 const optStr = (v: unknown): boolean => v === undefined || typeof v === 'string';
 export function isState(s: unknown): s is OAuthState {
   if (s === null || typeof s !== 'object') return false;
   const o = s as Record<string, unknown>;
-  return str(o.clientId) && str(o.clientSecret) && tok(o.refreshToken) && str(o.obtainedAt) && optStr(o.scope) && optTok(o.accessToken) && optStr(o.accessExpiresAt) && optStr(o.pendingNonce);
+  return str(o.clientId) && str(o.clientSecret) && tok(o.refreshToken) && str(o.obtainedAt) && optStr(o.scope) && optTok(o.accessToken) && optStr(o.accessExpiresAt) && optStr(o.pendingNonce) && optIso(o.eventCursor);
 }
