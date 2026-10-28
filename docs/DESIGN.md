@@ -91,13 +91,16 @@ Known-date fixtures (already in `test/blocks.test.ts`, Jerusalem unless noted):
 | --- | --- |
 | Plain Shabbat 2026-10-10 | ON Fri sunset-10, OFF Sat sunset+40 |
 | Rosh Hashana 5787 (Sat+Sun 2026-09-12/13) | one block, no drop Saturday night |
-| Hoshana Rabba 2026-09-30 | no block |
+| Hoshana Raba Fri 2026-10-02 (last day of Chol HaMoed, eve of Shmini Atzeret) | not a block day; the block for 10-03 starts at its sunset |
+| Sukkot V 2026-09-30 | Chol HaMoed, no block |
 | Shmini Atzeret 2026-10-03 | Israel: 1 day. Diaspora: 2 days (10-03, 10-04) |
 | Shavuot Fri 2027-06-11 + Shabbat | one block |
 | Pesach I Thu 2027-04-22 | block starts Wed evening |
 | Yom Kippur | excluded with option off |
 | New York, Dec 2026 | local sunset and time zone |
-| Israel DST 2027-03-26 | offsets exact in instants |
+| Israel DST 2027-03-26 and 2026-10-25; New York 2026-11-01 | offsets exact in instants |
+| Diaspora Pesach 2027 Thu-Fri-Sat | one three-day block; Israel splits it |
+| Jerusalem entry times vs Hebcal published candle lighting (b=10) | equal to the minute |
 
 To add: cross-check every block for 5 years against Hebcal's published Israel candle-lighting and Havdalah list
 as an independent oracle; reconciler tests (missed tick, manual toggle, fridge offline); client tests with
