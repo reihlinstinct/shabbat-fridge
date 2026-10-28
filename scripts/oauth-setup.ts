@@ -33,11 +33,16 @@ if (cmd === 'create-app') {
 } else if (cmd === 'authorize-url') {
   const st = open(JSON.parse(readFileSync(file, 'utf8')) as Sealed, key);
   const nonce = randomBytes(16).toString('hex');
+  save({ ...st, pendingNonce: nonce });
   console.log(authorizeUrl(st.clientId, redirect, scopes, nonce));
 } else if (cmd === 'exchange') {
   const st = open(JSON.parse(readFileSync(file, 'utf8')) as Sealed, key);
-  const t = await exchangeCode(st.clientId, st.clientSecret, need('CODE'), redirect);
-  save({ ...st, refreshToken: t.refresh_token, obtainedAt: new Date().toISOString(), scope: t.scope ?? st.scope });
+  // CODE is what the callback page shows: <code>~<state>. The state must match the nonce bound to the authorization link.
+  const raw = need('CODE');
+  const cut = raw.lastIndexOf('~');
+  if (cut < 1 || !st.pendingNonce || raw.slice(cut + 1) !== st.pendingNonce) throw new Error('The pasted value does not match the authorization link that was issued; start again from authorize-url');
+  const t = await exchangeCode(st.clientId, st.clientSecret, raw.slice(0, cut), redirect);
+  save({ ...st, pendingNonce: undefined, refreshToken: t.refresh_token, obtainedAt: new Date().toISOString(), scope: t.scope ?? st.scope });
   console.log('Authorization stored (sealed). Run the rotate workflow to confirm.');
 } else {
   throw new Error('usage: oauth-setup.ts create-app | authorize-url | exchange');

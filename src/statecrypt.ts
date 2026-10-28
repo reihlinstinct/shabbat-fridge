@@ -38,7 +38,15 @@ export function open(sealed: Sealed, key: string): OAuthState {
   } catch {
     throw new Error('Cannot decrypt the OAuth state: wrong STATE_KEY or corrupted file');
   }
-  const s = JSON.parse(plain) as OAuthState;
-  if (!s.clientId || !s.clientSecret || !s.refreshToken) throw new Error('OAuth state is incomplete');
+  const s = JSON.parse(plain) as Record<string, unknown>;
+  if (!isState(s)) throw new Error('OAuth state is incomplete or malformed');
   return s;
+}
+
+const str = (v: unknown): v is string => typeof v === 'string' && v.length > 0;
+const optStr = (v: unknown): boolean => v === undefined || typeof v === 'string';
+export function isState(s: unknown): s is OAuthState {
+  if (s === null || typeof s !== 'object') return false;
+  const o = s as Record<string, unknown>;
+  return str(o.clientId) && str(o.clientSecret) && str(o.refreshToken) && str(o.obtainedAt) && optStr(o.scope) && optStr(o.accessToken) && optStr(o.accessExpiresAt) && optStr(o.pendingNonce);
 }

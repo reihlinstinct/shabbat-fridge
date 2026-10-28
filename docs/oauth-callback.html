@@ -11,9 +11,9 @@
 <script>
 // Static page: nothing is sent anywhere. It only shows the ?code= value from the address bar.
 var p = new URLSearchParams(location.search);
-var c = p.get("code"), e = p.get("error");
+var c = p.get("code"), e = p.get("error"), st = p.get("state") || "";
 var msg = document.getElementById("msg");
-if (c) { msg.textContent = "Your authorization code:"; var el = document.getElementById("code"); el.textContent = c; el.hidden = false; document.getElementById("next").hidden = false; }
+if (c) { msg.textContent = "Your authorization code (paste it whole, including the part after ~):"; var el = document.getElementById("code"); el.textContent = c + "~" + st; el.hidden = false; document.getElementById("next").hidden = false; }
 else if (e) { msg.textContent = "Authorization was not granted (" + e.replace(/[^a-z_]/g, "") + "). You can close this page."; }
 else { msg.textContent = "No code in the address. Start again from the authorization link."; }
 history.replaceState(null, "", location.pathname);

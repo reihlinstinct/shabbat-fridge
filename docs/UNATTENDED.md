@@ -22,7 +22,7 @@ unused refresh token expires after **29 days**: https://community.smartthings.co
 |---|-----|------|
 | 1 | you | Create a SmartThings token at https://account.smartthings.com/tokens with the app-management scopes (Apps) and give it to Instinct through a secure vault link. It lasts 24h and is used once. |
 | 2 | Instinct | `oauth-setup create-app`: creates the OAuth-In app (scopes `r:locations r:devices r:rules`, add `w:rules` for the yearly installer), redirect URI = the static page `https://reihlinstinct.github.io/shabbat-fridge/oauth-callback.html`; checks the stored scopes (a reported SmartThings bug turns `*` into `$`). Prints no secret. |
-| 3 | you | Open the authorization link Instinct sends, sign in to Samsung, press Allow. The page shows a one-time code. Paste it into a second secure vault link. |
+| 3 | you | Open the authorization link Instinct sends, sign in to Samsung, press Allow. The page shows a one-time value `code~state`. Paste all of it into a second secure vault link (the state part binds it to the link Instinct issued). |
 | 4 | Instinct | `oauth-setup exchange`, seals the state, commits it to the private repo, sets `STATE_KEY`, pins the tool SHA, enables the workflow, checks the first run. |
 
 If step 2 reports the scope bug, or the apps API refuses the token, the fallback is the CLI: `smartthings apps:create` (OAuth-In App), then the same steps 3-4.

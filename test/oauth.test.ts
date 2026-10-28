@@ -6,6 +6,7 @@ import { SCOPES_INSTALL, authorizeUrl, exchangeCode, refreshState, type OAuthSta
 import { createOauthApp } from '../src/oauthsetup.js';
 import { rotateFile } from '../src/rotatefile.js';
 import { SmartThings } from '../src/smartthings.js';
+import { isToken } from '../src/oauth.js';
 import { newKey, open, seal } from '../src/statecrypt.js';
 
 const STATE: OAuthState = { clientId: 'CID', clientSecret: 'CSECRET', refreshToken: 'RT-1', obtainedAt: '2026-10-28T00:00:00.000Z' };
@@ -146,5 +147,64 @@ describe('access token reuse', () => {
     const s = open(JSON.parse(readFileSync(file, 'utf8')), key);
     expect(s).toMatchObject({ refreshToken: 'RT-2', accessToken: 'AT2' });
     expect(Date.parse(s.accessExpiresAt!)).toBeGreaterThan(now.getTime() + 20 * 3600000);
+  });
+});
+
+describe('malformed token responses never replace good state', () => {
+  const bad: Array<[string, unknown]> = [
+    ['numbers instead of strings', { access_token: 42, refresh_token: 99 }],
+    ['empty strings', { access_token: '', refresh_token: '' }],
+    ['newline in the access token', { access_token: 'A\nEVIL=1', refresh_token: 'R2' }],
+    ['carriage return in the refresh token', { access_token: 'A', refresh_token: 'R\r2' }],
+    ['space in a token', { access_token: 'A B', refresh_token: 'R2' }],
+    ['array body', [1, 2]],
+    ['null body', null],
+    ['negative expires_in', { access_token: 'A', refresh_token: 'R2', expires_in: -5 }],
+    ['string expires_in', { access_token: 'A', refresh_token: 'R2', expires_in: '86000' }],
+    ['non-string scope', { access_token: 'A', refresh_token: 'R2', scope: 5 }],
+  ];
+  for (const [name, body] of bad) {
+    it(`${name}: rotateFile throws and the file is byte-identical`, async () => {
+      const dir = mkdtempSync(join(tmpdir(), 'rot-'));
+      const key = newKey();
+      const file = join(dir, 's.json');
+      writeFileSync(file, JSON.stringify(seal(STATE, key)));
+      const before = readFileSync(file, 'utf8');
+      await expect(rotateFile(file, key, fake(() => json(200, body)))).rejects.toThrow();
+      expect(readFileSync(file, 'utf8')).toBe(before);
+    });
+  }
+  it('isToken accepts normal tokens only', () => {
+    expect(isToken('68e5657b-2892-4aa2-902b-3461116e6ea6')).toBe(true);
+    for (const v of ['', ' ', 'a b', 'a\nb', 7, null, undefined, 'x'.repeat(5000)]) expect(isToken(v)).toBe(false);
+  });
+  it('a state file with non-string fields is rejected on open', () => {
+    const k = newKey();
+    const s = seal({ ...STATE, refreshToken: 99 as unknown as string }, k);
+    expect(() => open(s, k)).toThrow(/malformed/);
+  });
+});
+
+describe('persisted read-back before the atomic rename', () => {
+  const setup = (): { file: string; key: string } => {
+    const dir = mkdtempSync(join(tmpdir(), 'rot-'));
+    const key = newKey();
+    const file = join(dir, 's.json');
+    writeFileSync(file, JSON.stringify(seal(STATE, key)));
+    return { file, key };
+  };
+  const ok = fake(() => json(200, { access_token: 'A9', refresh_token: 'RT-9' }));
+  it('a corrupted write is detected and the good file stays', async () => {
+    const { file, key } = setup();
+    const before = readFileSync(file, 'utf8');
+    await expect(rotateFile(file, key, ok, new Date(), 7200000, (p, d) => writeFileSync(p, d.slice(0, 40)))).rejects.toThrow(/read back/);
+    expect(readFileSync(file, 'utf8')).toBe(before);
+  });
+  it('a write that decrypts but holds different data is detected', async () => {
+    const { file, key } = setup();
+    const before = readFileSync(file, 'utf8');
+    const other = JSON.stringify(seal({ ...STATE, refreshToken: 'WRONG' }, key));
+    await expect(rotateFile(file, key, ok, new Date(), 7200000, (p) => writeFileSync(p, other))).rejects.toThrow(/differs/);
+    expect(readFileSync(file, 'utf8')).toBe(before);
   });
 });

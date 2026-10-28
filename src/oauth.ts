@@ -17,6 +17,8 @@ export interface OAuthState {
   /** Sealed too: lets runs reuse a still-valid access token instead of rotating every time. */
   accessToken?: string;
   accessExpiresAt?: string;
+  /** Random value bound to the authorization link and checked on code exchange (cleared afterwards). */
+  pendingNonce?: string;
 }
 
 export interface TokenResponse {
@@ -42,20 +44,28 @@ async function tokenCall(body: Record<string, string>, clientId: string, clientS
     body: new URLSearchParams(body).toString(),
   });
   const text = await res.text();
-  let json: Partial<TokenResponse> & { error?: string } = {};
+  let json: unknown = {};
   try {
-    json = text ? (JSON.parse(text) as typeof json) : {};
+    json = text ? JSON.parse(text) : {};
   } catch {
     /* non-JSON body: ignored, never printed */
   }
+  const obj = json !== null && typeof json === 'object' && !Array.isArray(json) ? (json as Record<string, unknown>) : {};
   if (!res.ok) {
     // Only the status and the standard OAuth error code. Bodies and descriptions can echo credentials.
-    const code = typeof json.error === 'string' && /^[a-z_]{1,40}$/.test(json.error) ? json.error : 'unknown';
+    const code = typeof obj.error === 'string' && /^[a-z_]{1,40}$/.test(obj.error) ? obj.error : 'unknown';
     throw new Error(`SmartThings token endpoint failed with HTTP ${res.status} (${code})`);
   }
-  if (!json.access_token || !json.refresh_token) throw new Error('SmartThings token response is missing access_token or refresh_token');
-  return json as TokenResponse;
+  if (!isToken(obj.access_token) || !isToken(obj.refresh_token)) throw new Error('SmartThings token response has a missing or malformed access_token or refresh_token');
+  if (obj.expires_in !== undefined && !(typeof obj.expires_in === 'number' && Number.isFinite(obj.expires_in) && obj.expires_in > 0)) {
+    throw new Error('SmartThings token response has an invalid expires_in');
+  }
+  if (obj.scope !== undefined && typeof obj.scope !== 'string') throw new Error('SmartThings token response has an invalid scope');
+  return { access_token: obj.access_token, refresh_token: obj.refresh_token, expires_in: obj.expires_in as number | undefined, scope: obj.scope as string | undefined };
 }
+
+/** A token is a non-empty string of printable ASCII without whitespace or control characters (it goes into GITHUB_ENV). */
+export const isToken = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 4096 && /^[\x21-\x7e]+$/.test(v);
 
 export function exchangeCode(clientId: string, clientSecret: string, code: string, redirectUri: string, fetcher: Fetch = fetch): Promise<TokenResponse> {
   return tokenCall({ grant_type: 'authorization_code', code, client_id: clientId, redirect_uri: redirectUri }, clientId, clientSecret, fetcher);
