@@ -25,7 +25,11 @@ MAP_PATH = ".github/ci-coverage-map.json"
 
 
 def sh(*args):
-    return subprocess.run(list(args), capture_output=True, text=True,
+    """Raw bytes. Decoding and splitting happen at the call site, so an
+    embedded carriage return or invalid UTF-8 in a commit subject or
+    filename cannot forge an extra record (text=True would translate
+    CR to a line break)."""
+    return subprocess.run(list(args), capture_output=True,
                           check=True).stdout
 
 
@@ -99,6 +103,25 @@ def job_durations(env):
     return durations
 
 
+def _yaml_plain_scalar(text):
+    """Strip a trailing comment from an unquoted YAML scalar: in a plain
+    scalar, ` #` starts a comment (name: X (issue #14) parses as X
+    (issue). Quoted scalars are returned unchanged."""
+    if text.startswith(("'", '"')):
+        return text
+    return text.split(" #", 1)[0].rstrip()
+
+
+def _job_display_name(raw):
+    """Static job display name from a raw `name:` value, or None.
+
+    Plain-scalar comments are stripped first: a comment containing an
+    expression (name: X # ${{ ... }}) does not make the static name
+    dynamic; a real expression in the value rejects the name."""
+    name = _yaml_plain_scalar(raw)
+    return None if "${{" in name else name
+
+
 def load_job_meta(env):
     """(job id -> `if:` expression, job id -> static display name), parsed
     from the workflow file. Job-level keys sit at 4-space indent; `name:`
@@ -131,8 +154,10 @@ def load_job_meta(env):
                         conditions[current] = m.group(1)
                         continue
                     m = re.match(r"^    name:\s*(.+?)\s*$", line)
-                    if m and current and "${{" not in m.group(1):
-                        names[current] = m.group(1)
+                    if m and current:
+                        name = _job_display_name(m.group(1))
+                        if name:
+                            names[current] = name
     except OSError:
         return {}, {}
     return conditions, names
@@ -163,12 +188,15 @@ def duration_for(job_id, durations, display_names):
 
 def md_escape(text):
     """Render untrusted text (commit subjects, file paths, if-conditions)
-    as literal text in the step summary: control characters and newlines
-    become spaces, HTML metacharacters become entities (the summary
-    renders raw HTML), and the Markdown metacharacters that could break
-    out of a table cell, code span or link are backslash-escaped."""
-    text = "".join(ch if (ch >= " " and ch != "\x7f") else " "
-                   for ch in text)
+    as literal text in the step summary: control characters, newlines
+    and the Unicode line/paragraph separators (U+2028/U+2029, which
+    str.splitlines also splits on) become spaces, HTML metacharacters
+    become entities (the summary renders raw HTML), and the Markdown
+    metacharacters that could break out of a table cell, code span or
+    link are backslash-escaped."""
+    text = "".join(
+        ch if (ch >= " " and ch not in "\x7f\x85\u2028\u2029") else " "
+        for ch in text)
     text = (text.replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;"))
@@ -184,7 +212,15 @@ def _self_test():
     invocation; a failure means the tool is defective, so the job stops."""
     assert md_escape("a`b|c\nd[e]f\\g") == "a\\`b\\|c d\\[e\\]f\\\\g"
     assert md_escape("<b>&") == "&lt;b&gt;&amp;"
-    assert md_escape("<a href='x'>y</a>") == "&lt;a href='x'&gt;y&lt;/a&gt;" 
+    assert md_escape("<a href='x'>y</a>") == "&lt;a href='x'&gt;y&lt;/a&gt;"
+    assert md_escape("a\u2028b\u2029c") == "a b c"
+    # the forged-row scenario: U+2028 in a subject must not split the
+    # log line, and any remaining fragment stays escaped literal text
+    forged = "deadbee real \u2028` | [x](/forged-link) | forged"
+    assert forged.split("\n") == [forged]
+    short, _, subject = forged.partition(" ")
+    rendered = f"- `{short}` {md_escape(subject)}"
+    assert rendered.count("\n") == 0 and "\u2028" not in rendered 
     assert md_escape("\x00\x1f\r\n") == "    "
     assert md_escape("plain text") == "plain text"
     dur = {"test (3.11)": 60.0, "test (3.12)": 70.0, "lint": 30.0,
@@ -196,6 +232,13 @@ def _self_test():
     assert glob_to_regex("scripts/*.ts").match("scripts/x.ts")
     assert not glob_to_regex("scripts/*.ts").match("scripts/ci/x.py")
     assert glob_to_regex("a/**").match("a/b/c")
+    assert _yaml_plain_scalar("Language shootout (issue #14)") == \
+        "Language shootout (issue"
+    assert _yaml_plain_scalar('"a # b"') == '"a # b"'
+    assert _job_display_name("Build things # ${{ matrix.x }}") == \
+        "Build things"
+    assert _job_display_name("Test (${{ matrix.py }})") is None
+    assert b"a \rb".split(b"\n") == [b"a \rb"]  # CR forges no row
 
 
 
@@ -328,12 +371,17 @@ def main():
         try:
             log = sh("git", "log", "--format=%h %s", log_rng).strip()
             out.append("Commits:")
-            for line in log.splitlines() or ["(none)"]:
+            # Split raw bytes on b"\n" only: universal-newlines
+            # decoding, splitlines(), or CR/U+2028/U+2029 in a subject
+            # must not smuggle a forged extra row.
+            for raw in log.split(b"\n") or [b"(none)"]:
+                line = raw.decode("utf-8", "replace")
                 short, _, subject = line.partition(" ")
-                out.append(f"- `{short}` {md_escape(subject)}")
+                out.append(f"- `{md_escape(short)}` {md_escape(subject)}")
             # -z: NUL-delimited, no quoting of non-ASCII paths.
             diff = sh("git", "diff", "--name-status", "-z", diff_rng)
-            records = [r for r in diff.split("\x00") if r]
+            records = [r.decode("utf-8", "replace")
+                       for r in diff.split(b"\x00") if r]
             i = 0
             while i < len(records):
                 status = records[i]
