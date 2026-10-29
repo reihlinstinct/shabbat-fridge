@@ -9,7 +9,7 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { SCOPES_INSTALL, SCOPES_READ, authorizeUrl, exchangeCode } from '../src/oauth.js';
-import { createOauthApp } from '../src/oauthsetup.js';
+import { createAppNotice, createOauthApp } from '../src/oauthsetup.js';
 import { open, seal, type Sealed } from '../src/statecrypt.js';
 import { SmartThings } from '../src/smartthings.js';
 
@@ -29,7 +29,7 @@ if (cmd === 'create-app') {
   if (existsSync(file)) throw new Error(`${file} already exists; refusing to overwrite`);
   const app = await createOauthApp(new SmartThings(need('ST_PAT')), env('APP_NAME', 'shabbat-fridge'), redirect, scopes);
   save({ clientId: app.clientId, clientSecret: app.clientSecret, refreshToken: 'pending', obtainedAt: new Date().toISOString(), scope: app.scopes.join(' ') });
-  console.log(`App created (id ${app.appId}, client id ${app.clientId}). Sealed state written to ${file}. Next: authorize-url.`);
+  console.log(createAppNotice(file));
 } else if (cmd === 'authorize-url') {
   const st = open(JSON.parse(readFileSync(file, 'utf8')) as Sealed, key);
   const nonce = randomBytes(16).toString('hex');

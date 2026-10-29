@@ -35,3 +35,6 @@ export async function createOauthApp(st: SmartThings, name: string, redirectUri:
   if (!(stored.redirectUris ?? []).includes(redirectUri)) throw new Error('Stored redirect URI differs from the request');
   return { appId, clientId, clientSecret, scopes: got };
 }
+
+/** What create-app prints. Fixed text plus the state file path: never the app id, client id or secret. */
+export const createAppNotice = (file: string): string => `App created. Sealed state written to ${file}. Next: authorize-url.`;

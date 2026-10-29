@@ -232,3 +232,20 @@ describe('cached state validation', () => {
     expect(open(JSON.parse(readFileSync(file, 'utf8')), key).refreshToken).toBe('pending');
   });
 });
+
+describe('oauth-setup output (CodeQL js/clear-text-logging, issue #67)', () => {
+  it('create-app notice is fixed text and carries no identifiers', async () => {
+    const { createAppNotice } = await import('../src/oauthsetup.js');
+    const out = createAppNotice('state/oauth.enc.json');
+    expect(out).toBe('App created. Sealed state written to state/oauth.enc.json. Next: authorize-url.');
+    expect(out).not.toMatch(/client|secret|appId|\bid\b/i);
+  });
+  it('the script prints no app id, client id or secret in any console call', () => {
+    const src = readFileSync(join(__dirname, '..', 'scripts', 'oauth-setup.ts'), 'utf8');
+    const logs = src.split('\n').filter((l) => /console\.(log|error|warn|info)/.test(l));
+    expect(logs.length).toBeGreaterThan(0);
+    for (const l of logs) expect(l).not.toMatch(/app\.(appId|clientId|clientSecret)|st\.clientSecret|clientSecret|refreshToken|STATE_KEY|ST_PAT/);
+    // the only value allowed to reach a console call that contains a client id is the authorization URL the user must open
+    expect(logs.filter((l) => /clientId/.test(l))).toEqual(["  console.log(authorizeUrl(st.clientId, redirect, scopes, nonce));"]);
+  });
+});
