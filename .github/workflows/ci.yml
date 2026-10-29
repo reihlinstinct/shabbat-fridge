@@ -19,6 +19,8 @@ jobs:
       - run: npm test
 
   summary:
+    permissions:
+      contents: read
     name: Run summary
     if: always()
     needs: [test]

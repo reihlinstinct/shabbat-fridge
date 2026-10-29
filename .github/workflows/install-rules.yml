@@ -63,6 +63,8 @@ jobs:
         run: npx --no-install tsx scripts/install.ts
 
   summary:
+    permissions:
+      contents: read
     name: Run summary
     if: always()
     needs: [install]

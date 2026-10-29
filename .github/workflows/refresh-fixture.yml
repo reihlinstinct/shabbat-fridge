@@ -30,6 +30,8 @@ jobs:
         run: git diff --exit-code -- test/fixtures/hebcal-yomtov.json
 
   summary:
+    permissions:
+      contents: read
     name: Run summary
     if: always()
     needs: [refresh]

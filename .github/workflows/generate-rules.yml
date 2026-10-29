@@ -67,6 +67,8 @@ jobs:
           path: out/
 
   summary:
+    permissions:
+      contents: read
     name: Run summary
     if: always()
     needs: [generate]
