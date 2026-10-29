@@ -26,19 +26,3 @@ jobs:
         run: |
           set -eu
           printf 'header = "Authorization: Bearer %s"\nheader = "Accept: application/vnd.github+json"\n' "$GH_TOKEN" | curl -fsS -K - -X PUT "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/workflows/collector.yml/enable"
-
-  summary:
-    name: Run summary
-    if: always()
-    needs: [keepalive]
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Write run summary
-        env:
-          NEEDS_JSON: ${{ toJSON(needs) }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python3 scripts/ci/run_summary.py

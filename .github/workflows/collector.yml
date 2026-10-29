@@ -124,19 +124,3 @@ jobs:
               call -X POST "$api/issues/$num/comments" -d "$(jq -n --arg b "Still failing: $run" '{body:$b}')" >/dev/null
             fi
           fi
-
-  summary:
-    name: Run summary
-    if: always()
-    needs: [collect, alert]
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Write run summary
-        env:
-          NEEDS_JSON: ${{ toJSON(needs) }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python3 scripts/ci/run_summary.py
