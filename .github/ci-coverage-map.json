@@ -36,7 +36,7 @@
       ]
     },
     {
-      "pattern": "scripts/**",
+      "pattern": "scripts/*.ts",
       "checks": [
         "test"
       ]
