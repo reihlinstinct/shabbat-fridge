@@ -28,6 +28,8 @@ npm run typecheck
 
 [docs/INSTALL-WORKFLOW.md](docs/INSTALL-WORKFLOW.md) explains the GitHub Actions installer (dry run first, token as a repo secret).
 
+Every workflow ends with a `Run summary` job that writes a summary to the top of the run page: which jobs ran, their result and duration, what was skipped and why, the commits and files the run changed, and which checks cover those changes (`.github/ci-coverage-map.json` declares the coverage; files matching no mapping are flagged). The script is `scripts/ci/run_summary.py`.
+
 `scripts/generate.ts` writes the Rules JSON from environment settings (no private data in the repo).
 
 `src/rules.ts` turns blocks into dated, Sunset-relative SmartThings Rules actions and diffs them against existing rules (dry run).
