@@ -7,6 +7,16 @@ rules named `shabbat-fridge holidays YYYY` (one per year, 10 years) and, only if
 הפעולה **Install holiday rules** יוצרת או מעדכנת רק חוקים בשם `shabbat-fridge holidays YYYY` (חוק לכל שנה), ורק אם הפעלת `weekly_rules` גם חוק אחד בשם `shabbat-fridge weekly`.
 היא לא נוגעת באף חוק אחר, כולל חוקי השבת השבועיים שלך. ברירת המחדל היא הרצה יבשה (בלי כתיבה).
 
+## Known issue: dated holiday rules are paused / בעיה ידועה
+
+Dated holiday rules appear to fire every day on SmartThings instead of only on their date (see [issue #63](https://github.com/reihlinstinct/shabbat-fridge/issues/63), SmartThings ticket 1629394). Until that is resolved, `scripts/install.ts` and `scripts/generate.ts` create no dated rules:
+
+- A run that asks only for dated rules stops at once with exit code 3 and a message linking the issue. Nothing is created, changed or deleted.
+- The weekly Shabbat rule (Friday ON, Saturday OFF) is not dated and still works: set `WEEKLY_RULES=true` (workflow input `weekly_rules`). The run installs only that rule and prints a one-line notice that dated rules were skipped.
+- If dated "shabbat-fridge holidays" rules already exist in the account, the install run warns and leaves them alone. Delete them in SmartThings.
+
+כללי חג עם תאריך נראים כנורים כל יום ב-SmartThings ולכן מושבתים. כלל השבת השבועי (כניסה בשישי, יציאה במוצאי שבת) ממשיך לעבוד עם `WEEKLY_RULES=true`.
+
 ## 1. Create the SmartThings token / יצירת הטוקן
 
 1. Open https://account.smartthings.com/tokens and sign in with your Samsung account.
