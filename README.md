@@ -11,6 +11,16 @@ Jewish calendar and local sunset, instead of relying on the appliance's built-in
 The fridge's built-in Shabbat mode runs weekly, around sunset. It does not know about Yom Tov, and a Yom Tov
 that touches Shabbat can take the fridge out of the mode in the middle of the holiday.
 
+## Known issue: dated holiday rules are paused / בעיה ידועה
+
+Dated holiday rules appear to fire every day on SmartThings instead of only on their date (see [issue #63](https://github.com/reihlinstinct/shabbat-fridge/issues/63), SmartThings ticket 1629394). Until that is resolved, `scripts/install.ts` and `scripts/generate.ts` create no dated rules:
+
+- A run that asks only for dated rules stops at once with exit code 3 and a message linking the issue. Nothing is created, changed or deleted.
+- The weekly Shabbat rule (Friday ON, Saturday OFF) is not dated and still works: set `WEEKLY_RULES=true` (workflow input `weekly_rules`). The run installs only that rule and prints a one-line notice that dated rules were skipped.
+- If dated "shabbat-fridge holidays" rules already exist in the account, the install run warns and leaves them alone. Delete them in SmartThings.
+
+כללי חג עם תאריך נראים כנורים כל יום ב-SmartThings ולכן מושבתים. כלל השבת השבועי (כניסה בשישי, יציאה במוצאי שבת) ממשיך לעבוד עם `WEEKLY_RULES=true`.
+
 ## What exists today
 
 `src/blocks.ts` computes the "no-touch" blocks for any location:

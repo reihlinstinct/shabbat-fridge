@@ -9,10 +9,21 @@ import { appendFileSync } from 'node:fs';
 import { computeBlocks, type Place } from '../src/blocks.js';
 import { MANAGED_NAME, isEmpty, planInstall, resolveIsrael, rulesAfterPlan, type ExistingRule } from '../src/install.js';
 import { crossCheckOrThrow } from '../src/crosscheck.js';
-import { holidayOnlyActions, lateWeeklyOffs, rulesByYear, weeklyRule } from '../src/rules.js';
+import { DatedRulesBlockedError, desiredRules } from '../src/desiredrules.js';
+import { DATED_RULES_BLOCKED, KNOWN_ISSUE_EXIT, datedRulesSkippedNotice } from '../src/knownissue.js';
+import { holidayOnlyActions, lateWeeklyOffs } from '../src/rules.js';
 import { SmartThings, sabbathDevices } from '../src/smartthings.js';
 
 const env = (k: string, d = ''): string => process.env[k] ?? d;
+const withWeekly = env('WEEKLY_RULES', 'false') === 'true';
+// Known issue #63: a run that would only create dated rules stops before reading anything or calling SmartThings.
+try {
+  desiredRules({ weekly: withWeekly, weeklyOptions: { deviceId: 'x' }, holidayActions: [] });
+} catch (e) {
+  if (!(e instanceof DatedRulesBlockedError)) throw e;
+  console.error(e.message);
+  process.exit(KNOWN_ISSUE_EXIT);
+}
 const token = env('ST_TOKEN').trim();
 if (!token) {
   console.error('ST_TOKEN is empty. Set the SMARTTHINGS_TOKEN repository secret.');
@@ -44,18 +55,29 @@ const start = new Date(y, m - 1, d);
 const end = new Date(y + Number(env('YEARS', '10')), m - 1, d);
 const entry = Number(env('ENTRY', '60'));
 const exit = Number(env('EXIT', '90'));
-const blocks = computeBlocks(place, start, end, { entryMinutesBeforeSunset: entry, exitMinutesAfterSunset: exit, includeYomKippur: env('YOM_KIPPUR', 'true') === 'true' });
-if (env('CROSSCHECK', 'true') !== 'false') {
-  const n = await crossCheckOrThrow(blocks, israel, startStr, `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`, env('YOM_KIPPUR', 'true') === 'true');
-  say(`Cross-check: ${n} Yom Tov days match the Hebcal web API`);
-}
-const actions = holidayOnlyActions(blocks, { deviceId, entryMinutesBeforeSunset: entry, exitMinutesAfterSunset: exit, reenterMinutesAfterSunset: Number(env('REENTER', '100')) });
 const reenter = Number(env('REENTER', '100'));
-const withWeekly = env('WEEKLY_RULES', 'false') === 'true';
-const desired = [...(withWeekly ? [weeklyRule({ deviceId, entryMinutesBeforeSunset: entry, exitMinutesAfterSunset: exit, reenterMinutesAfterSunset: reenter })] : []), ...rulesByYear('shabbat-fridge holidays', actions)];
+let actions: ReturnType<typeof holidayOnlyActions> = [];
+if (!DATED_RULES_BLOCKED) {
+  const blocks = computeBlocks(place, start, end, { entryMinutesBeforeSunset: entry, exitMinutesAfterSunset: exit, includeYomKippur: env('YOM_KIPPUR', 'true') === 'true' });
+  if (env('CROSSCHECK', 'true') !== 'false') {
+    const n = await crossCheckOrThrow(blocks, israel, startStr, `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`, env('YOM_KIPPUR', 'true') === 'true');
+    say(`Cross-check: ${n} Yom Tov days match the Hebcal web API`);
+  }
+  actions = holidayOnlyActions(blocks, { deviceId, entryMinutesBeforeSunset: entry, exitMinutesAfterSunset: exit, reenterMinutesAfterSunset: reenter });
+}
+const { rules: desired, datedSkipped } = desiredRules({
+  weekly: withWeekly,
+  weeklyOptions: { deviceId, entryMinutesBeforeSunset: entry, exitMinutesAfterSunset: exit, reenterMinutesAfterSunset: reenter },
+  holidayActions: actions,
+});
+if (datedSkipped) say(datedRulesSkippedNotice());
 
 const existing: ExistingRule[] = [];
 for (const s of await st.rules(locationId)) existing.push(await st.rule(locationId, s.id));
+if (datedSkipped) {
+  const n = existing.filter((r) => /^shabbat-fridge holidays \d{4}$/.test(r.name)).length;
+  if (n > 0) say(`  WARNING: ${n} dated "shabbat-fridge holidays" rules exist in this account. They are affected by the known issue: delete them in SmartThings (this run does not touch them; PRUNE=true would remove them).`);
+}
 const plan = planInstall(existing, desired, env('PRUNE') === 'true');
 const lateOffs = lateWeeklyOffs(rulesAfterPlan(existing, plan), deviceId, reenter);
 

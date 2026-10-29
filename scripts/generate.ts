@@ -6,16 +6,27 @@
  * or for the Rules API. Nothing here talks to SmartThings.
  */
 import { writeFileSync } from 'node:fs';
+import { DatedRulesBlockedError, desiredRules } from '../src/desiredrules.js';
+import { DATED_RULES_BLOCKED, KNOWN_ISSUE_EXIT, datedRulesSkippedNotice } from '../src/knownissue.js';
 import { HDate } from '@hebcal/core';
 import { computeBlocks, sunset } from '../src/blocks.js';
 import { crossCheckOrThrow } from '../src/crosscheck.js';
-import { blocksToActions, holidayOnlyActions, rulesByYear, weeklyRule } from '../src/rules.js';
+import { blocksToActions, holidayOnlyActions } from '../src/rules.js';
 
 const env = (k: string, d?: string): string => {
   const v = process.env[k] ?? d;
   if (v === undefined) throw new Error(`missing ${k}`);
   return v;
 };
+const withWeekly = env('WEEKLY_RULES', 'false') === 'true';
+// Known issue #63: a run that would only produce dated rules stops before reading anything else or writing a file.
+try {
+  desiredRules({ weekly: withWeekly, weeklyOptions: { deviceId: 'x' }, holidayActions: [] });
+} catch (e) {
+  if (!(e instanceof DatedRulesBlockedError)) throw e;
+  console.error(e.message);
+  process.exit(KNOWN_ISSUE_EXIT);
+}
 const [y, m, d] = env('START').split('-').map(Number) as [number, number, number];
 const start = new Date(y, m - 1, d);
 const end = new Date(y + Number(env('YEARS', '10')), m - 1, d);
@@ -27,16 +38,16 @@ const place = {
   tzid: env('TZ'),
   israel: env('ISRAEL', 'true') === 'true',
 };
-const blocks = computeBlocks(place, start, end, { entryMinutesBeforeSunset: entry, exitMinutesAfterSunset: exit, includeYomKippur: env('YOM_KIPPUR', 'true') === 'true' });
-if (process.env.CROSSCHECK !== 'false') {
+const blocks = DATED_RULES_BLOCKED ? [] : computeBlocks(place, start, end, { entryMinutesBeforeSunset: entry, exitMinutesAfterSunset: exit, includeYomKippur: env('YOM_KIPPUR', 'true') === 'true' });
+if (!DATED_RULES_BLOCKED && process.env.CROSSCHECK !== 'false') {
   const n = await crossCheckOrThrow(blocks, place.israel, env('START'), `${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`, env('YOM_KIPPUR', 'true') === 'true');
   console.log(`Cross-check: ${n} Yom Tov days match the Hebcal web API`);
 }
 const opts = { deviceId: env('DEVICE_ID'), entryMinutesBeforeSunset: entry, exitMinutesAfterSunset: exit, reenterMinutesAfterSunset: Number(env('REENTER', '100')) };
 const mode = env('MODE', 'holiday');
-const actions = mode === 'merged' ? blocksToActions(blocks, opts) : holidayOnlyActions(blocks, opts);
-const rules = rulesByYear(mode === 'merged' ? 'shabbat-fridge full' : 'shabbat-fridge holidays', actions);
-if (env('WEEKLY_RULES', 'false') === 'true') rules.unshift(weeklyRule({ ...opts, entryMinutesBeforeSunset: entry, exitMinutesAfterSunset: exit }));
+const actions = DATED_RULES_BLOCKED ? [] : mode === 'merged' ? blocksToActions(blocks, opts) : holidayOnlyActions(blocks, opts);
+const { rules, datedSkipped } = desiredRules({ weekly: withWeekly, weeklyOptions: opts, holidayActions: actions, holidayPrefix: mode === 'merged' ? 'shabbat-fridge full' : 'shabbat-fridge holidays' });
+if (datedSkipped) console.log(datedRulesSkippedNotice());
 writeFileSync(env('OUT'), JSON.stringify(rules, null, 2));
 console.log(`${mode}: ${blocks.length} blocks, ${actions.length} actions, ${rules.length} rules (${rules.map((r) => r.actions.length).join(',')})`);
 
@@ -49,6 +60,7 @@ if (process.env.SCHEDULE_MD) {
     `Generated from the calendar core for ${place.israel ? 'Israel' : 'Diaspora'} calendar, time zone ${place.tzid}.`,
     'Times are sunset-relative approximations for the coordinates used; SmartThings computes the real sunset for its Location.',
     'Weekly Friday ON / Saturday OFF rules are not listed.',
+    ...(DATED_RULES_BLOCKED ? [datedRulesSkippedNotice()] : []),
     '',
   ];
   for (const b of blocks) {
