@@ -1,5 +1,7 @@
 # shabbat-fridge
 
+[![CI](https://github.com/reihlinstinct/shabbat-fridge/actions/workflows/ci.yml/badge.svg)](https://github.com/reihlinstinct/shabbat-fridge/actions/workflows/ci.yml)
+
 Sets Shabbat / Yom Tov mode on Samsung SmartThings appliances (first target: a Samsung fridge) from the
 Jewish calendar and local sunset, instead of relying on the appliance's built-in weekly Shabbat timer.
 
