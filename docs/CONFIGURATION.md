@@ -29,7 +29,7 @@ passed in the environment; no value is committed. Each section stands alone.
 - `YOM_KIPPUR` - include the Yom Kippur rule (default `true`).
 - `WEEKLY_RULES` - also emit the weekly Friday ON / Saturday OFF rule (default `false`).
 - `MODE` - `holiday` (default) or `merged`.
-- `DEVICE_ID` - optional device id embedded in the rule actions.
+- `DEVICE_ID` - device id embedded in the rule actions (required; the run fails without it).
 - `CROSSCHECK` - cross-checks the computed Yom Tov days against the Hebcal web API (default on; set to `false` to skip).
 - `SCHEDULE_MD` - optional path: also write an annotated Markdown schedule (the Rules API has no comment field).
 - Known issue #63: dated holiday rules are blocked (`DATED_RULES_BLOCKED`). While blocked, the generator produces no dated blocks and skips the cross-check; a run that would only produce dated rules stops before reading anything else or writing a file.
@@ -38,7 +38,7 @@ passed in the environment; no value is committed. Each section stands alone.
 
 - `ST_TOKEN` - SmartThings token (required). Only GET requests are made and the token is never printed or written.
 - `OUT_DIR` - where snapshots and events go (required); must be a PRIVATE location (the files hold device and location ids, coordinates and door timing).
-- `RETAIN_DAYS` - event history retention in days (default 365).
+- `RETAIN_DAYS` - retention in days for snapshot files and monthly event files alike (default 365).
 - `LOCATION_ID`, `DEVICE_ID` - optional; auto-detected when the account has exactly one.
 
 ## scripts/collect-encrypted.ts (encrypted collector)
