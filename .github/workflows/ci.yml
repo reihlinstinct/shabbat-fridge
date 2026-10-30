@@ -3,10 +3,52 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Weekly full suite: Sunday 06:00 Israel winter time (04:00 UTC;
+    # runs 07:00 IDT in summer).
+    - cron: '0 4 * * 0'
 permissions:
   contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: filter
+        shell: bash
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          # Docs-only pull requests skip the heavy jobs; the Run summary gate
+          # still runs and reports them as skipped.
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # --no-renames: a code-to-doc rename still shows the deleted code
+          # path, so it cannot masquerade as docs-only.
+          git diff --no-renames --name-only "origin/${BASE_REF}...HEAD" | tee /tmp/changed.txt
+          # Doc-only allowlist: markdown/rst, license, and exact community
+          # metadata names (no prefix matches) - unknown files run the suite.
+          # Images always run: docs/ images are app assets.
+          if grep -qvEi '\.(md|markdown|rst)$|^LICENSE$|^\.github/(CODEOWNERS|dependabot\.yml|FUNDING\.yml)$|^\.github/ISSUE_TEMPLATE/[^/]+\.(md|yml|yaml)$|^\.github/PULL_REQUEST_TEMPLATE(\.md)?$|^\.github/PULL_REQUEST_TEMPLATE/[^/]+\.md$' /tmp/changed.txt; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
   test:
+    needs: [changes]
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -23,7 +65,7 @@ jobs:
       contents: read
     name: Run summary
     if: always()
-    needs: [test]
+    needs: [changes, test]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -31,7 +73,24 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
       - name: Write run summary
+        if: always()
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 scripts/ci/run_summary.py
+      - name: Fail on failed or cancelled dependencies
+        if: always()
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          # Deliberate docs-only skips are allowed; a failed or cancelled
+          # dependency must fail this gate.
+          python3 - <<'PY'
+          import json, os, sys
+          needs = json.loads(os.environ["NEEDS_JSON"])
+          bad = {k: v["result"] for k, v in needs.items() if v["result"] not in ("success", "skipped")}
+          if bad:
+              print("Dependencies failed or cancelled:", bad)
+              sys.exit(1)
+          print("All dependencies succeeded or were deliberately skipped.")
+          PY
