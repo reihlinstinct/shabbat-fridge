@@ -49,6 +49,7 @@ function codeEnv(): Set<string> {
       const text = readFileSync(path, 'utf8');
       for (const m of text.matchAll(ENV_RE)) {
         const token = m[1] ?? m[2] ?? m[3];
+        if (token === undefined) continue;
         if (token.startsWith('GITHUB_') || token.startsWith('RUNNER_') || SYSTEM_VARS.has(token)) continue;
         out.add(token);
       }
@@ -63,10 +64,17 @@ function docFiles(): string[] {
 
 function docEnv(text: string): Set<string> {
   const out = new Set<string>();
-  for (const m of text.matchAll(BACKTICK_VAR_RE)) out.add(m[1]);
+  for (const m of text.matchAll(BACKTICK_VAR_RE)) {
+    const name = m[1];
+    if (name !== undefined) out.add(name);
+  }
   for (const s of text.matchAll(SPAN_RE)) {
     const span = s[1] ?? s[2];
-    for (const m of span.matchAll(ASSIGN_RE)) out.add(m[1]);
+    if (span === undefined) continue;
+    for (const m of span.matchAll(ASSIGN_RE)) {
+      const name = m[1];
+      if (name !== undefined) out.add(name);
+    }
   }
   return out;
 }
