@@ -1,0 +1,8 @@
+# Tokens the two-way doc check must not pair between docs and code.
+# Every entry needs a reason. Format: TOKEN # reason
+STORE_REMOTE # test-only remote override, ignored inside GitHub Actions (store.ts); not operator config
+SMARTTHINGS_TOKEN # repository secret that install-rules.yml maps to ST_TOKEN; not read from the environment by the code
+COLLECTOR_ENABLED # repository variable gating the collector workflow (collector.yml), not read by the TypeScript
+TOOL_REF # pin inside the private-repo workflow template (docs/forensics/unattended.yml), not read by code in this repo
+YEARLY_INSTALL # repository variable in the private-repo workflow template (docs/forensics/unattended.yml), not read by code in this repo
+DATED_RULES_BLOCKED # code constant from src/knownissue.ts mentioned in the docs, not an environment variable
