@@ -45,6 +45,11 @@ describe('perDay', () => {
     expect(perDay(r.intervals, 'Asia/Jerusalem')).toEqual([{ day: '2026-10-29', wh: 50, hours: 4, hasGap: false }]);
     expect(perDay(r.intervals, 'UTC').map((d) => d.day)).toEqual(['2026-10-28', '2026-10-29']);
   });
+  it('marks a day that has both a gap interval and a normal interval', () => {
+    const r = intervalsOf([s('2026-10-28T01:00:00.000Z', 0), s('2026-10-28T02:00:00.000Z', 10), s('2026-10-28T10:00:00.000Z', 110), s('2026-10-28T11:00:00.000Z', 120)]);
+    expect(r.intervals.map((i) => i.gap)).toEqual([false, true, false]);
+    expect(perDay(r.intervals, 'UTC')).toEqual([{ day: '2026-10-28', wh: 120, hours: 10, hasGap: true }]);
+  });
   it('marks the day of a gap interval (by its midpoint) and not the others', () => {
     const r = intervalsOf([s('2026-10-28T08:00:00.000Z', 0), s('2026-10-28T09:00:00.000Z', 10), s('2026-10-29T08:00:00.000Z', 100), s('2026-10-29T09:00:00.000Z', 110)]);
     expect(perDay(r.intervals, 'UTC').map((d) => [d.day, d.hasGap])).toEqual([['2026-10-28', true], ['2026-10-29', false]]);
