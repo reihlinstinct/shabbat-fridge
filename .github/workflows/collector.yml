@@ -108,7 +108,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          set -eu
+          set -euo pipefail
           [ "$GITHUB_REPOSITORY" = "reihlinstinct/shabbat-fridge" ]
           api="https://api.github.com/repos/$GITHUB_REPOSITORY"
           call() { printf 'header = "Authorization: Bearer %s"\nheader = "Accept: application/vnd.github+json"\n' "$GH_TOKEN" | curl -fsS -K - "$@"; }
