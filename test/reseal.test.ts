@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -25,6 +25,14 @@ describe('reseal', () => {
     expect(open(sealed, b)).toEqual(state);
     expect(() => open(sealed, a)).toThrow();
     expect(readdirSync(dir)).toEqual(['oauth.enc.json']);
+  });
+  it('leaves the resealed file at mode 0600 (POSIX)', () => {
+    if (process.platform === 'win32') return;
+    const a = newKey();
+    const b = newKey();
+    writeFileSync(file, JSON.stringify(seal(state, a)));
+    reseal(file, a, b);
+    expect(statSync(file).mode & 0o777).toBe(0o600);
   });
   it('leaves the file untouched with a wrong old key or an identical new key', () => {
     const a = newKey();
