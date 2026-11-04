@@ -1,5 +1,4 @@
 import { readFileSync } from 'node:fs';
-import ts from 'typescript';
 import { describe, expect, it } from 'vitest';
 import { planInstall, type ExistingRule } from '../src/install.js';
 
@@ -16,23 +15,15 @@ describe('documented installer side effects', () => {
     expect(readme).toContain('dry run makes no writes');
     expect(readme).toMatch(/non-dry installer run can create, update and delete managed SmartThings rules/);
     expect(installer).toContain("if (dry) say('Dry run: nothing was written.");
-    const ast = ts.createSourceFile('install.ts', installer, ts.ScriptTarget.Latest, true);
-    const dryBranch = ast.statements.find((node) => ts.isIfStatement(node) && node.expression.getText(ast) === 'dry');
-    expect(dryBranch && ts.isIfStatement(dryBranch)).toBe(true);
-    const noOp = (dryBranch as ts.IfStatement).elseStatement;
-    expect(noOp && ts.isIfStatement(noOp)).toBe(true);
-    const apply = (noOp as ts.IfStatement).elseStatement;
-    expect(apply && ts.isBlock(apply)).toBe(true);
-    const calls: ts.CallExpression[] = [];
-    const visit = (node: ts.Node): void => {
-      if (ts.isCallExpression(node) && ['st.createRule', 'st.updateRule', 'st.deleteRule'].includes(node.expression.getText(ast))) calls.push(node);
-      ts.forEachChild(node, visit);
-    };
-    visit(ast);
-    expect(calls.map((node) => node.expression.getText(ast)).sort()).toEqual(['st.createRule', 'st.deleteRule', 'st.updateRule']);
-    for (const call of calls) {
-      expect(call.getStart(ast)).toBeGreaterThan(apply!.getStart(ast));
-      expect(call.getEnd()).toBeLessThan(apply!.getEnd());
+    const branch = installer.match(/if \(dry\) say\('Dry run:[\s\S]*?else if \(isEmpty\(plan\)\) say\('Nothing to do\.'\);\s*else \{([\s\S]*?)const after:/);
+    expect(branch).not.toBeNull();
+    // The extracted non-dry body must not close before the writes. Its loop
+    // statements have no block braces; comments/strings here contain none.
+    expect(branch![1]).not.toContain('}');
+    for (const method of ['createRule', 'updateRule', 'deleteRule']) {
+      const call = `await st.${method}(`;
+      expect(branch![1]).toContain(call);
+      expect(installer.split(call)).toHaveLength(2);
     }
     expect(readme).toContain('docs/INSTALL-WORKFLOW.md');
   });
