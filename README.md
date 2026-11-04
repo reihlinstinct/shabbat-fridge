@@ -5,8 +5,13 @@
 Sets Shabbat / Yom Tov mode on Samsung SmartThings appliances (first target: a Samsung fridge) from the
 Jewish calendar and local sunset, instead of relying on the appliance's built-in weekly Shabbat timer.
 
-**Status: design phase.** The code computes and diffs rules; nothing here writes to SmartThings yet. See
-[docs/DESIGN.md](docs/DESIGN.md) and [docs/RESEARCH.md](docs/RESEARCH.md).
+**Status: implemented planner and installer.** The planner computes and diffs rules.
+The installer reads SmartThings rules; dry run makes no writes. An explicitly
+non-dry installer run can create, update and delete managed SmartThings rules.
+Dated holiday rules remain paused as described below; weekly rules are opt-in.
+Start with [the dry-run-first installer guide](docs/INSTALL-WORKFLOW.md). See
+[the side-effect boundary](docs/INSTALLER-BOUNDARY.md),
+[design](docs/DESIGN.md) and [research](docs/RESEARCH.md).
 
 ## The problem
 
@@ -19,7 +24,7 @@ Dated holiday rules appear to fire every day on SmartThings instead of only on t
 
 - A run that asks only for dated rules stops at once with exit code 3 and a message linking the issue. Nothing is created, changed or deleted.
 - The weekly Shabbat rule (Friday ON, Saturday OFF) is not dated and still works: set `WEEKLY_RULES=true` (workflow input `weekly_rules`). The run installs only that rule and prints a one-line notice that dated rules were skipped.
-- If dated "shabbat-fridge holidays" rules already exist in the account, the install run warns and leaves them alone. Delete them in SmartThings.
+- If dated "shabbat-fridge holidays" rules already exist in the account, the install run warns. With the default `PRUNE=false`, it leaves those paused holiday rules alone; a non-dry run with `PRUNE=true` can remove them. Duplicate managed rules can also be removed without PRUNE. Review the dry-run plan before applying.
 
 כללי חג עם תאריך נראים כנורים כל יום ב-SmartThings ולכן מושבתים. כלל השבת השבועי (כניסה בשישי, יציאה במוצאי שבת) ממשיך לעבוד עם `WEEKLY_RULES=true`.
 
