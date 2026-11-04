@@ -24,7 +24,7 @@ Dated holiday rules appear to fire every day on SmartThings instead of only on t
 
 - A run that asks only for dated rules stops at once with exit code 3 and a message linking the issue. Nothing is created, changed or deleted.
 - The weekly Shabbat rule (Friday ON, Saturday OFF) is not dated and still works: set `WEEKLY_RULES=true` (workflow input `weekly_rules`). The run installs only that rule and prints a one-line notice that dated rules were skipped.
-- If dated "shabbat-fridge holidays" rules already exist in the account, the install run warns and leaves them alone. Delete them in SmartThings.
+- If dated "shabbat-fridge holidays" rules already exist in the account, the install run warns. With the default `PRUNE=false`, it leaves those paused holiday rules alone; a non-dry run with `PRUNE=true` can remove them. Duplicate managed rules can also be removed without PRUNE. Review the dry-run plan before applying.
 
 כללי חג עם תאריך נראים כנורים כל יום ב-SmartThings ולכן מושבתים. כלל השבת השבועי (כניסה בשישי, יציאה במוצאי שבת) ממשיך לעבוד עם `WEEKLY_RULES=true`.
 
