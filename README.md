@@ -5,8 +5,13 @@
 Sets Shabbat / Yom Tov mode on Samsung SmartThings appliances (first target: a Samsung fridge) from the
 Jewish calendar and local sunset, instead of relying on the appliance's built-in weekly Shabbat timer.
 
-**Status: design phase.** The code computes and diffs rules; nothing here writes to SmartThings yet. See
-[docs/DESIGN.md](docs/DESIGN.md) and [docs/RESEARCH.md](docs/RESEARCH.md).
+**Status: implemented planner and installer.** The planner computes and diffs rules.
+The installer reads SmartThings rules; dry run makes no writes. An explicitly
+non-dry installer run can create, update and delete managed SmartThings rules.
+Dated holiday rules remain paused as described below; weekly rules are opt-in.
+Start with [the dry-run-first installer guide](docs/INSTALL-WORKFLOW.md). See
+[the side-effect boundary](docs/INSTALLER-BOUNDARY.md),
+[design](docs/DESIGN.md) and [research](docs/RESEARCH.md).
 
 ## The problem
 
