@@ -6,6 +6,8 @@ name: collector
 on:
   schedule:
     - cron: '17 * * * *'
+    # Second entry, 30 minutes later: GitHub skipped hourly slots for 5 to 8 hours (issue #94). The concurrency group serializes runs.
+    - cron: '47 * * * *'
   workflow_dispatch: {}
 permissions: {}
 concurrency:
