@@ -121,6 +121,11 @@ describe('collector and keepalive (strict)', () => {
     const { wf } = load('collector.yml');
     const collect = wf.jobs!.collect!;
     const alert = wf.jobs!.alert!;
+    it('has two hourly schedule entries at different minutes (a skipped slot must not leave a gap, issue #94)', () => {
+      const sched = (wf.on as { schedule: { cron: string }[] }).schedule;
+      const crons = sched.map((x) => x.cron);
+      expect(crons).toEqual(['17 * * * *', '47 * * * *']);
+    });
     it('has one concurrency group without cancellation, the restricted environment and the enable switch', () => {
       expect(wf.concurrency?.group).toBe('collector');
       expect(wf.concurrency?.['cancel-in-progress']).toBe(false);
