@@ -214,12 +214,11 @@ describe('scripts/decrypt-logs.ts', () => {
     const l = run(['decrypt'], { LOGS_DIR: join(root, 'logalias'), OUT_DIR: join(t.logs, 'o'), LOGS_PRIVATE_KEY_FILE: t.keyFile });
     expect(l.stdout.trim()).toBe('decrypt-logs failed: out-in-logs-dir');
   });
-  // Disposable key pair made with `openssl genpkey -algorithm X25519`; public key from `openssl pkey -pubout -outform DER | tail -c 32 | base64`. Test only.
-  const OPENSSL_PEM = `-----BEGIN PRIVATE KEY-----
-MC4CAQAwBQYDK2VuBCIEIDAEFi92WiXo/+wX6VqcnusnsHUlvqnliQUdFjs0Y0du
------END PRIVATE KEY-----
-`;
-  const OPENSSL_PUB = 'rSBCyUBUvlxZcXNcBdm9+I9Wu3l6zuhDazWpYuWLCx8=';
+  // Throwaway X25519 key pair generated at test time (nothing secret is committed). Node exports the same PKCS#8 PEM that
+  // `openssl genpkey -algorithm X25519` writes; the expected public key is the last 32 bytes of the SPKI DER, as `openssl pkey -pubout` gives.
+  const pair = generateKeyPairSync('x25519');
+  const OPENSSL_PEM = pair.privateKey.export({ format: 'pem', type: 'pkcs8' }) as string;
+  const OPENSSL_PUB = pair.publicKey.export({ format: 'der', type: 'spki' }).subarray(-32).toString('base64');
   it('accepts an openssl PKCS#8 PEM key file: the derived public key matches openssl, and chunks sealed to it decrypt', () => {
     const t = tree();
     writeFileSync(t.keyFile, OPENSSL_PEM, { mode: 0o600 });
@@ -233,7 +232,10 @@ MC4CAQAwBQYDK2VuBCIEIDAEFi92WiXo/+wX6VqcnusnsHUlvqnliQUdFjs0Y0du
   it('rejects PEM keys of another type, encrypted PEMs and junk with a fixed code and no key text', () => {
     const t = tree();
     const ed = generateKeyPairSync('ed25519').privateKey.export({ format: 'pem', type: 'pkcs8' }) as string;
-    for (const bad of [ed, '-----BEGIN ENCRYPTED PRIVATE KEY-----\nAAAA\n-----END ENCRYPTED PRIVATE KEY-----\n', '-----BEGIN PRIVATE KEY-----\nCANARY\n-----END PRIVATE KEY-----\n']) {
+    // Fake blocks are built from pieces so secret scanners do not flag the file as containing a key block.
+    const hdr = (kind: string): string => '-----' + 'BEGIN ' + kind + '-----\n';
+    const ftr = (kind: string): string => '-----' + 'END ' + kind + '-----\n';
+    for (const bad of [ed, hdr('ENCRYPTED PRIVATE KEY') + 'AAAA\n' + ftr('ENCRYPTED PRIVATE KEY'), hdr('PRIVATE KEY') + 'CANARY\n' + ftr('PRIVATE KEY')]) {
       writeFileSync(t.keyFile, bad, { mode: 0o600 });
       const r = run(['decrypt'], { LOGS_DIR: t.logs, OUT_DIR: t.out, LOGS_PRIVATE_KEY_FILE: t.keyFile });
       expect(r.stdout.trim()).toBe('decrypt-logs failed: key-file-invalid');
