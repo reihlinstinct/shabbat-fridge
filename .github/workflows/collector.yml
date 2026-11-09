@@ -5,10 +5,21 @@
 name: collector
 on:
   schedule:
+    # Six entries, ten minutes apart (issues #94 and #112): GitHub skipped both hourly slots for 5 to 8 hours at a
+    # time even with two entries. Six chances per hour make a full-hour skip unlikely; the `collector` concurrency
+    # group serializes runs that fire close together, and the 1 hour cursor overlap keeps a repeated chunk harmless.
+    - cron: '7 * * * *'
     - cron: '17 * * * *'
-    # Second entry, 30 minutes later: GitHub skipped hourly slots for 5 to 8 hours (issue #94). The concurrency group serializes runs.
+    - cron: '27 * * * *'
+    - cron: '37 * * * *'
     - cron: '47 * * * *'
+    - cron: '57 * * * *'
   workflow_dispatch: {}
+  # External trigger chance (issue #112), e.g. a free Cloudflare Worker cron, with no workflow change later.
+  # Dispatching needs a token held outside GitHub; the guard below still restricts the run to this repository,
+  # refs/heads/main and the three event names before any secret is in the environment.
+  repository_dispatch:
+    types: [collect]
 permissions: {}
 concurrency:
   group: collector
@@ -27,7 +38,7 @@ jobs:
           set -euo pipefail
           [ "$GITHUB_REPOSITORY" = "reihlinstinct/shabbat-fridge" ]
           [ "$GITHUB_REF" = "refs/heads/main" ]
-          case "$GITHUB_EVENT_NAME" in schedule|workflow_dispatch) ;; *) exit 1 ;; esac
+          case "$GITHUB_EVENT_NAME" in schedule|workflow_dispatch|repository_dispatch) ;; *) exit 1 ;; esac
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
