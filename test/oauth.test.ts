@@ -14,6 +14,8 @@ const json = (status: number, body: unknown): Response => new Response(JSON.stri
 type Call = { url: string; init?: RequestInit };
 const fake = (reply: () => Response, calls: Call[] = []): typeof fetch => (async (url: string, init?: RequestInit) => { calls.push({ url: String(url), init }); return reply(); }) as typeof fetch;
 
+// Section: oauth client
+
 describe('oauth client', () => {
   it('authorize URL carries client, scopes, redirect and state', () => {
     const u = new URL(authorizeUrl('CID', 'https://x.example/cb', SCOPES_INSTALL, 'n0nce'));
@@ -48,6 +50,8 @@ describe('oauth client', () => {
   });
 });
 
+// Section: sealed state
+
 describe('sealed state', () => {
   it('round-trips, and the ciphertext does not contain the secrets', () => {
     const k = newKey();
@@ -68,6 +72,8 @@ describe('sealed state', () => {
     expect(seal(STATE, k).iv).not.toBe(seal(STATE, k).iv);
   });
 });
+
+// Section: rotateFile fails closed
 
 describe('rotateFile fails closed', () => {
   const setup = (): { file: string; key: string } => {
@@ -100,6 +106,8 @@ describe('rotateFile fails closed', () => {
   });
 });
 
+// Section: createOauthApp
+
 describe('createOauthApp', () => {
   const run = (storedScopes: string[], storedRedirect = 'https://x.example/cb'): Promise<unknown> => {
     let n = 0;
@@ -121,6 +129,8 @@ describe('createOauthApp', () => {
     await expect(run(['r:devices:*', 'r:rules:*'], 'https://evil.example/cb')).rejects.toThrow(/redirect/);
   });
 });
+
+// Section: access token reuse
 
 describe('access token reuse', () => {
   it('a still-valid stored access token is reused: no network call, file unchanged', async () => {
@@ -149,6 +159,8 @@ describe('access token reuse', () => {
     expect(Date.parse(s.accessExpiresAt!)).toBeGreaterThan(now.getTime() + 20 * 3600000);
   });
 });
+
+// Section: malformed token responses never replace good state
 
 describe('malformed token responses never replace good state', () => {
   const bad: Array<[string, unknown]> = [
@@ -185,6 +197,8 @@ describe('malformed token responses never replace good state', () => {
   });
 });
 
+// Section: persisted read-back before the atomic rename
+
 describe('persisted read-back before the atomic rename', () => {
   const setup = (): { file: string; key: string } => {
     const dir = mkdtempSync(join(tmpdir(), 'rot-'));
@@ -209,6 +223,8 @@ describe('persisted read-back before the atomic rename', () => {
   });
 });
 
+// Section: cached state validation
+
 describe('cached state validation', () => {
   const write = (st: Partial<OAuthState>) => {
     const key = newKey();
@@ -232,6 +248,8 @@ describe('cached state validation', () => {
     expect(open(JSON.parse(readFileSync(file, 'utf8')), key).refreshToken).toBe('pending');
   });
 });
+
+// Section: oauth-setup output (CodeQL js/clear-text-logging, issue #67)
 
 describe('oauth-setup output (CodeQL js/clear-text-logging, issue #67)', () => {
   it('create-app notice is fixed text and carries no identifiers', async () => {

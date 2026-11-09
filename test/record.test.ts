@@ -17,6 +17,8 @@ const iso = (ms: number) => new Date(ms).toISOString();
 const ev = (time: string, value: unknown = 'closed', n = 0): HistoryEvent => ({ time, epoch: Date.parse(time), hash: n, componentId: 'main', capability: 'contactSensor', attribute: 'contact', value });
 const base = { v: 1 as const, takenAt: iso(NOW), place: { latitude: 1, longitude: 2, tzid: 'Asia/Jerusalem', countryCode: 'ISR' }, sabbath: null, rules: [] };
 
+// Section: cursor
+
 describe('cursor', () => {
   const e = (t: string): RecordEvent => ({ k: t, time: t });
   it('floors to the hour and subtracts the 1 hour overlap', () => {
@@ -44,6 +46,8 @@ describe('cursor', () => {
     expect(() => eventsSince([ev('garbage')], undefined)).toThrow(/bad-event-time/);
   });
 });
+
+// Section: eventsSince and fit
 
 describe('eventsSince and fit', () => {
   it('keeps events strictly newer than the cursor, oldest first, each with its dedupe key', () => {
@@ -77,6 +81,8 @@ const client = (events: HistoryEvent[], truncated = false): Client => ({
   deviceHistoryResult: async () => ({ events, truncated }),
 });
 const read = (chunk: Buffer): LogRecord => JSON.parse(gunzipSync(assemble([decryptChunk(chunk, kp.privateKey, RECORD_CONTEXT)])).toString('utf8')) as LogRecord;
+
+// Section: collectOnce
 
 describe('collectOnce', () => {
   const now = new Date(NOW);
@@ -119,6 +125,8 @@ describe('collectOnce', () => {
     await expect(collectOnce({ client: { ...c, devices: async () => [] }, publicKey: kp.publicKey, cursor: undefined, now })).rejects.toThrow(/device-ambiguous/);
   });
 });
+
+// Section: state cursor
 
 describe('state cursor', () => {
   const STATE: OAuthState = { clientId: 'CID', clientSecret: 'CSECRET', refreshToken: 'RT-1', obtainedAt: '2026-10-28T00:00:00.000Z' };
@@ -164,6 +172,8 @@ describe('state cursor', () => {
 });
 
 import { spawnSync } from 'node:child_process';
+// Section: collector scripts print fixed text only
+
 describe('collector scripts print fixed text only', () => {
   const run = (script: string, env: Record<string, string>) => spawnSync('npx', ['--no-install', 'tsx', script], { env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', ...env }, encoding: 'utf8' });
   it('collect-encrypted names a missing variable by code only', () => {
@@ -190,6 +200,8 @@ import { fakeSt } from './fixtures/fake-st.js';
 import { SmartThings } from '../src/smartthings.js';
 import { errorCode } from '../src/record.js';
 import { resolve } from 'node:path';
+
+// Section: review follow-ups
 
 describe('review follow-ups', () => {
   const now = new Date(NOW);
@@ -275,6 +287,8 @@ describe('review follow-ups', () => {
     expect(existsSync(`${stateFile}.tmp`)).toBe(false);
   });
 });
+
+// Section: energy counters
 
 describe('energy counters', () => {
   const full = { components: { main: {
