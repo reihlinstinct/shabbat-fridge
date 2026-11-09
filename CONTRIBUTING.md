@@ -30,3 +30,10 @@ Thanks for helping improve shabbat-fridge. Everything in this repo is public - t
 ## File placement (enforced)
 
 Decide where a file lives BEFORE creating it. The contract in `.repo-layout.yml` lists the allowed top-level directories, the file types permitted in each, and the required community-standards files; `python3 tools/check_repo_layout.py` enforces it in CI. A new kind of file means updating the contract in the same PR.
+
+## Code-layout CI enforcement
+
+The Code layout workflow now fails on oversized source/test files or missing
+section headers under the shared code-layout standard. Its findings summary
+is still written on failure. Follow collaboration-docs docs/CODE-LAYOUT.md;
+keep new changes within the existing source (400) and test (600) line limits.
