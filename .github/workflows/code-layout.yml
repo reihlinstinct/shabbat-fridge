@@ -1,4 +1,4 @@
-name: Code layout (advisory)
+name: Code layout
 
 on:
   pull_request:
@@ -20,7 +20,6 @@ jobs:
         uses: reihlinstinct/repo-checks/actions/code-layout@c2f8c84fbe0f336bf7cedae46547cc4645e807d5 # v1.1.1
         with:
           checkout-root: ${{ github.workspace }}
-        continue-on-error: true
       - name: Report findings
         if: always()
         env:
@@ -28,7 +27,7 @@ jobs:
           GUARD_RESULT: ${{ steps.guard.outputs.result }}
         run: |
           {
-            echo '## Code layout (advisory)'
+            echo '## Code layout'
             echo
             echo "Check outcome: $GUARD_OUTCOME"
             echo
@@ -36,5 +35,5 @@ jobs:
             echo "$GUARD_RESULT"
             echo '```'
             echo
-            echo 'Advisory mode: findings are reported, not enforced. Standard: collaboration-docs docs/CODE-LAYOUT.md.'
+            echo 'Blocking mode: layout findings fail this workflow. Standard: collaboration-docs docs/CODE-LAYOUT.md.'
           } >> "$GITHUB_STEP_SUMMARY"
