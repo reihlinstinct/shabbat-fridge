@@ -32,9 +32,7 @@
       "evidence": "actions: write",
       "issue": "https://github.com/reihlinstinct/shabbat-fridge/issues/72",
       "reason": "Keepalive job re-enables scheduled workflows before GitHub auto-disables them; job-scoped; reviewed."
-    }
-  ],
-  "entries": [
+    },
     {
       "path": ".github/workflows/gemini-review.yml",
       "rule": "job-write",
