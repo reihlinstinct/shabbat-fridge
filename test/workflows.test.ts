@@ -61,9 +61,14 @@ describe('collector and keepalive (strict)', () => {
     describe(f, () => {
       const { wf } = load(f);
       const all = steps(wf);
-      it('allows only schedule and workflow_dispatch without inputs', () => {
+      it('allows only the approved triggers for this file', () => {
         const on = wf.on as Record<string, unknown>;
-        expect(Object.keys(on).sort()).toEqual(['schedule', 'workflow_dispatch']);
+        if (f === 'collector.yml') {
+          expect(Object.keys(on).sort()).toEqual(['repository_dispatch', 'schedule', 'workflow_dispatch']);
+          expect(on.repository_dispatch).toEqual({ types: ['collect'] });
+        } else {
+          expect(Object.keys(on).sort()).toEqual(['schedule', 'workflow_dispatch']);
+        }
         const wd = on.workflow_dispatch;
         expect(wd === null || (typeof wd === 'object' && Object.keys(wd as object).length === 0)).toBe(true);
       });
@@ -121,10 +126,10 @@ describe('collector and keepalive (strict)', () => {
     const { wf } = load('collector.yml');
     const collect = wf.jobs!.collect!;
     const alert = wf.jobs!.alert!;
-    it('has two hourly schedule entries at different minutes (a skipped slot must not leave a gap, issue #94)', () => {
+    it('has six schedule entries ten minutes apart (a skipped slot must not leave a gap, issues #94 and #112)', () => {
       const sched = (wf.on as { schedule: { cron: string }[] }).schedule;
       const crons = sched.map((x) => x.cron);
-      expect(crons).toEqual(['17 * * * *', '47 * * * *']);
+      expect(crons).toEqual(['7 * * * *', '17 * * * *', '27 * * * *', '37 * * * *', '47 * * * *', '57 * * * *']);
     });
     it('has one concurrency group without cancellation, the restricted environment and the enable switch', () => {
       expect(wf.concurrency?.group).toBe('collector');
