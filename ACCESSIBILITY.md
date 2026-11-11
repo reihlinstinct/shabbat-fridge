@@ -1,21 +1,30 @@
 # Accessibility statement
 
-We want shabbat-fridge to be usable by everyone. Our target is WCAG 2.2 level AA for
-user-facing content and interfaces.
+Our target is SI 5568 level AA, with additional WCAG 2.2 A/AA automated coverage.
+No complete conformance audit has been completed.
 
-## What we do
+## Evidence
 
-- Semantic markup and keyboard-navigable interfaces.
-- Readable contrast and scalable text.
-- This project ships no end-user web UI today; this statement covers its documentation and any interfaces it grows.
+The repository ships a static authorization callback at docs/oauth-callback.html.
+The pinned repo-checks axe action tests its invented code/state, error and missing
+code states in Chromium and WebKit at 1280x900 and 390x844: 12 states. The regression
+also checks query removal and expected synthetic message visibility. No real
+account, authorization code, appliance or sign-in is used. The hidden code element now stays hidden in missing/error states; its previous
+CSS display rule overrode the hidden attribute. Authorization behavior is unchanged.
 
-## Known limitations
+The preview serves only the callback on 127.0.0.1. It is a first-party synthetic/
+no-secret test, not network isolation; unsupported browser network paths remain
+outside the shared runner contract.
 
-Accessibility work is ongoing. If something blocks you, we want to know.
+## Known limits
+
+Manual keyboard, screen-reader, zoom/reflow, mixed-language pronunciation and
+real-device checks remain open. WebKit on Linux is not iOS Safari. Two browser
+engines do not prove native two-OS coverage or legal compliance. Appliance-control
+flows and vendor authorization pages are outside this static page test.
 
 ## Feedback
 
-Report an accessibility problem by opening an issue:
-https://github.com/reihlinstinct/shabbat-fridge/issues/new/choose
-If the report is sensitive, use a private security advisory instead:
-https://github.com/reihlinstinct/shabbat-fridge/security/advisories/new
+Report barriers and reproducible steps through the repository Issues page:
+https://github.com/reihlinstinct/shabbat-fridge/issues
+Never include real authorization codes, tokens or account details.
