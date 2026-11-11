@@ -33,3 +33,9 @@ The preview contract uses the project Vitest runner. CI pins the shared remote
 action and the separate state-check tools to the same reviewed commit; the
 state checker installs only that lockfile. The documented scanner path is
 development-only, not appliance configuration.
+
+Browser CI uses a digest-pinned official Playwright 1.65.0 runtime matching the
+shared tools lockfile. The preinstalled mode still launches and renders in both
+engines before axe scans. Missing browsers or libraries fail CI; no browser
+cache, apt mirror fetch or skipped test substitutes for these checks. Update
+the image digest and matching tool lockfiles together.

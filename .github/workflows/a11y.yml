@@ -8,6 +8,8 @@ permissions:
 jobs:
   a11y:
     runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v1.65.0-noble@sha256:9beb546099e11f52d62e505537914870e01a67e0e6b00ae41da4775324e73dbe
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -17,7 +19,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           repository: reihlinstinct/repo-checks
-          ref: 55f4c1155ef80421af0bf0cad2f296f2c3acd044
+          ref: aee03b060c7b844b28e9767d8634b87f82cb4896
           path: .ci/repo-checks
           persist-credentials: false
       - name: Synthetic preview contract test
@@ -33,8 +35,9 @@ jobs:
           done
           echo 'Synthetic preview failed to start'
           exit 1
-      - uses: reihlinstinct/repo-checks/actions/a11y@55f4c1155ef80421af0bf0cad2f296f2c3acd044
+      - uses: reihlinstinct/repo-checks/actions/a11y@aee03b060c7b844b28e9767d8634b87f82cb4896
         with:
+          browser-runtime: preinstalled
           base-url: http://127.0.0.1:8765/
           config: ${{ github.workspace }}/.a11y-routes.json
       - name: Synthetic callback behavior states
