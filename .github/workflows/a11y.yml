@@ -21,7 +21,9 @@ jobs:
           path: .ci/repo-checks
           persist-credentials: false
       - name: Synthetic preview contract test
-        run: node --test test/a11y-preview.test.mjs
+        run: |
+          npm ci
+          npx vitest run test/a11y-preview.test.mjs
       - name: Start synthetic local preview
         run: |
           node test/a11y-preview.mjs preview > /tmp/zz-a11y-preview.log 2>&1 &
@@ -31,14 +33,16 @@ jobs:
           done
           echo 'Synthetic preview failed to start'
           exit 1
-      - uses: ./.ci/repo-checks/actions/a11y
+      - uses: reihlinstinct/repo-checks/actions/a11y@55f4c1155ef80421af0bf0cad2f296f2c3acd044
         with:
           base-url: http://127.0.0.1:8765/
           config: ${{ github.workspace }}/.a11y-routes.json
       - name: Synthetic callback behavior states
         env:
           A11Y_TOOLS: ${{ github.workspace }}/.ci/repo-checks/actions/a11y
-        run: node test/a11y.mjs
+        run: |
+          npm ci --prefix "$A11Y_TOOLS" --ignore-scripts --no-audit --no-fund
+          node test/a11y.mjs
       - name: Scope summary
         if: always()
         run: |

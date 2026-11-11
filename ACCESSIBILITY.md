@@ -28,3 +28,8 @@ flows and vendor authorization pages are outside this static page test.
 Report barriers and reproducible steps through the repository Issues page:
 https://github.com/reihlinstinct/shabbat-fridge/issues
 Never include real authorization codes, tokens or account details.
+
+The preview contract uses the project Vitest runner. CI pins the shared remote
+action and the separate state-check tools to the same reviewed commit; the
+state checker installs only that lockfile. The documented scanner path is
+development-only, not appliance configuration.
