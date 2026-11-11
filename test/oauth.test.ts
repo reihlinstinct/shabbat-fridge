@@ -258,12 +258,40 @@ describe('oauth-setup output (CodeQL js/clear-text-logging, issue #67)', () => {
     expect(out).toBe('App created. Sealed state written to state/oauth.enc.json. Next: authorize-url.');
     expect(out).not.toMatch(/client|secret|appId|\bid\b/i);
   });
+  // Extract the full argument text of every console.(log|error|warn|info) call with a balanced scan, not a line
+  // scan, so a multi-line call cannot slip past the guard (issue #69).
+  const consoleCallArgs = (src: string): string[] => {
+    const out: string[] = [];
+    const re = /console\.(log|error|warn|info)\s*\(/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(src)) !== null) {
+      const start = m.index + m[0].length;
+      let depth = 1;
+      let quote: string | null = null;
+      let i = start;
+      for (; i < src.length && depth > 0; i++) {
+        const c = src[i];
+        if (quote !== null) {
+          if (c === '\\') i++;
+          else if (c === quote) quote = null;
+        } else if (c === '"' || c === "'" || c === '`') quote = c;
+        else if (c === '(') depth++;
+        else if (c === ')') depth--;
+      }
+      out.push(src.slice(start, i - 1).trim().replace(/\s+/g, ' '));
+    }
+    return out;
+  };
+  it('consoleCallArgs captures a multi-line call as one call with its full arguments', () => {
+    const snippet = "console.log(\n  authorizeUrl(st.clientId,\n    redirect, scopes, nonce)\n);\nconsole.log('done');";
+    expect(consoleCallArgs(snippet)).toEqual(['authorizeUrl(st.clientId, redirect, scopes, nonce)', "'done'"]);
+  });
   it('the script prints no app id, client id or secret in any console call', () => {
     const src = readFileSync(join(__dirname, '..', 'scripts', 'oauth-setup.ts'), 'utf8');
-    const logs = src.split('\n').filter((l) => /console\.(log|error|warn|info)/.test(l));
-    expect(logs.length).toBeGreaterThan(0);
-    for (const l of logs) expect(l).not.toMatch(/app\.(appId|clientId|clientSecret)|st\.clientSecret|clientSecret|refreshToken|STATE_KEY|ST_PAT/);
+    const calls = consoleCallArgs(src);
+    expect(calls.length).toBeGreaterThan(0);
+    for (const args of calls) expect(args).not.toMatch(/app\.(appId|clientId|clientSecret)|st\.clientSecret|clientSecret|refreshToken|STATE_KEY|ST_PAT/);
     // the only value allowed to reach a console call that contains a client id is the authorization URL the user must open
-    expect(logs.filter((l) => /clientId/.test(l))).toEqual(["  console.log(authorizeUrl(st.clientId, redirect, scopes, nonce));"]);
+    expect(calls.filter((args) => /clientId/.test(args))).toEqual(['authorizeUrl(st.clientId, redirect, scopes, nonce)']);
   });
 });
