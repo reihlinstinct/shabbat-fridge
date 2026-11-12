@@ -77,7 +77,7 @@ describe('error hygiene', () => {
   });
   it('an HTTP error never includes the body either', async () => {
     const fetcher = (async () => new Response('CANARY-BODY', { status: 500 })) as typeof fetch;
-    await expect(new SmartThings('t', fetcher).locations()).rejects.toThrow(/HTTP 500$/);
+    await expect(new SmartThings('t', fetcher, 'https://api.smartthings.com/v1', async () => {}).locations()).rejects.toThrow(/HTTP 500$/);
   });
 });
 

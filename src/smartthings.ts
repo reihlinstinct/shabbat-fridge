@@ -37,33 +37,50 @@ export interface HistoryEvent {
 
 export type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
+/** Delays before retrying a transient GET failure (5xx or a network error). 4xx and non-GET calls are never retried. */
+const RETRY_DELAYS_MS = [15_000, 45_000] as const;
+
 /** Minimal SmartThings REST client. The token is only ever placed in the Authorization header. */
 export class SmartThings {
   constructor(
     private readonly token: string,
     private readonly fetcher: Fetch = fetch,
     private readonly base = 'https://api.smartthings.com/v1',
+    private readonly sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
   ) {
     if (!token) throw new Error('SmartThings token is empty');
   }
 
   private async call<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const res = await this.fetcher(`${this.base}${path}`, {
-      method,
-      headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    if (!res.ok) {
+    const attempts = method === 'GET' ? RETRY_DELAYS_MS.length + 1 : 1;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      if (attempt > 0) await this.sleep(RETRY_DELAYS_MS[attempt - 1]!);
+      let res: Response;
+      try {
+        res = await this.fetcher(`${this.base}${path}`, {
+          method,
+          headers: { Authorization: `Bearer ${this.token}`, 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: body === undefined ? undefined : JSON.stringify(body),
+        });
+      } catch (err) {
+        // No response at all (network failure). GETs retry; anything else propagates unchanged.
+        if (attempt + 1 < attempts) continue;
+        throw err;
+      }
+      if (res.ok) {
+        const text = await res.text();
+        try {
+          return (text ? JSON.parse(text) : {}) as T;
+        } catch {
+          // Never let the parser quote the body: it can hold a token or other private data.
+          throw new Error(`SmartThings ${method} ${path.split('?')[0]} returned a non-JSON response (HTTP ${res.status})`);
+        }
+      }
       // Status and method/path only. The response body can echo request data, so it is not printed.
-      throw new Error(`SmartThings ${method} ${path.split('?')[0]} failed with HTTP ${res.status}`);
+      const err = new Error(`SmartThings ${method} ${path.split('?')[0]} failed with HTTP ${res.status}`);
+      if (res.status < 500 || attempt + 1 === attempts) throw err;
     }
-    const text = await res.text();
-    try {
-      return (text ? JSON.parse(text) : {}) as T;
-    } catch {
-      // Never let the parser quote the body: it can hold a token or other private data.
-      throw new Error(`SmartThings ${method} ${path.split('?')[0]} returned a non-JSON response (HTTP ${res.status})`);
-    }
+    throw new Error('unreachable');
   }
 
   async locations(): Promise<StLocation[]> {
