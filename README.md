@@ -65,3 +65,16 @@ Optional: both workflows can also manage a weekly Shabbat rule (`weekly_rules`, 
 Optional: read-only snapshot collector and analyzer for post-incident analysis (private storage only). See docs/FORENSICS.md.
 Optional: hourly collector in this repository with encrypted logs (`collector` workflow, `logs` and `state` branches, `scripts/decrypt-logs.ts` for the owner). Design: docs/ENCRYPTED-LOGS.md and docs/ENCRYPTED-LOGS-COLLECTOR.md. It stays inactive unless the repository variable COLLECTOR_ENABLED is `true`, and needs the setup described there (public key in config/logs.pub, `collector` Environment with STATE_KEY).
 Unattended token rotation and yearly installer: see docs/UNATTENDED.md.
+
+## Accessibility engineering
+
+See [ACCESSIBILITY.md](ACCESSIBILITY.md) for the SI 5568 AA target and remaining
+manual/device checks. The static callback uses invented data only in CI. To run
+with installed reviewed shared browser tools:
+
+```sh
+A11Y_TOOLS=/absolute/path/to/reviewed/repo-checks/actions/a11y node test/a11y.mjs
+```
+
+This does not sign in, control appliances, certify conformance or provide network
+isolation. Never use real codes with the synthetic test.

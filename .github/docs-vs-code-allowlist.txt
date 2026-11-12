@@ -6,3 +6,4 @@ COLLECTOR_ENABLED # repository variable gating the collector workflow (collector
 TOOL_REF # pin inside the private-repo workflow template (docs/forensics/unattended.yml), not read by code in this repo
 YEARLY_INSTALL # repository variable in the private-repo workflow template (docs/forensics/unattended.yml), not read by code in this repo
 DATED_RULES_BLOCKED # code constant from src/knownissue.ts mentioned in the docs, not an environment variable
+A11Y_TOOLS # development-only shared scanner path in test/a11y.mjs, not product configuration
