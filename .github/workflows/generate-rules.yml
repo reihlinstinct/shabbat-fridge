@@ -1,0 +1,85 @@
+name: Generate holiday rules JSON
+on:
+  workflow_dispatch:
+    inputs:
+      latitude:
+        description: 'Latitude (default Jerusalem city center)'
+        default: '31.769'
+      longitude:
+        default: '35.216'
+      timezone:
+        description: 'IANA time zone'
+        default: 'Asia/Jerusalem'
+      calendar:
+        description: 'israel = one day of Yom Tov. diaspora = also the second day (Yom Tov Sheni shel Galuyot).'
+        type: choice
+        options: [israel, diaspora]
+        default: israel
+      years:
+        default: '10'
+      entry_minutes_before_sunset:
+        default: '60'
+      exit_minutes_after_sunset:
+        default: '90'
+      reenter_minutes_after_sunset:
+        default: '100'
+      weekly_rules:
+        description: 'Also manage the weekly Shabbat rule "shabbat-fridge weekly" (Friday ON, Saturday OFF). Leave off if you already have your own weekly rules.'
+        type: boolean
+        default: false
+      include_yom_kippur:
+        type: boolean
+        default: true
+permissions:
+  contents: read
+jobs:
+  generate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Generate rules and annotated schedule (cross-checked against the Hebcal web API)
+        env:
+          LAT: ${{ inputs.latitude }}
+          LON: ${{ inputs.longitude }}
+          TZ: ${{ inputs.timezone }}
+          ISRAEL: ${{ inputs.calendar == 'israel' }}
+          YEARS: ${{ inputs.years }}
+          ENTRY: ${{ inputs.entry_minutes_before_sunset }}
+          EXIT: ${{ inputs.exit_minutes_after_sunset }}
+          REENTER: ${{ inputs.reenter_minutes_after_sunset }}
+          WEEKLY_RULES: ${{ inputs.weekly_rules }}
+          YOM_KIPPUR: ${{ inputs.include_yom_kippur }}
+          DEVICE_ID: YOUR-DEVICE-ID
+          MODE: holiday
+        run: |
+          mkdir -p out
+          export START="$(date -u +%F)"
+          OUT=out/holiday-rules.json SCHEDULE_MD=out/holiday-schedule.md npx --no-install tsx scripts/generate.ts
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: holiday-rules
+          path: out/
+
+  summary:
+    permissions:
+      contents: read
+    name: Run summary
+    if: always()
+    needs: [generate]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Write run summary
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/ci/run_summary.py

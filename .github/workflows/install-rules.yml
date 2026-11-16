@@ -1,0 +1,81 @@
+name: Install holiday rules
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (plan only, nothing written). Set false to apply.'
+        type: boolean
+        default: true
+      years:
+        description: 'Years ahead to generate'
+        default: '10'
+      entry_minutes_before_sunset:
+        default: '60'
+      exit_minutes_after_sunset:
+        default: '90'
+      reenter_minutes_after_sunset:
+        description: 'Re-ON after a Saturday followed by a holiday'
+        default: '100'
+      include_yom_kippur:
+        type: boolean
+        default: true
+      calendar:
+        description: 'auto = by the SmartThings location country (Israel: one day Yom Tov). diaspora = also the second day of Yom Tov (Yom Tov Sheni shel Galuyot).'
+        type: choice
+        options: [auto, israel, diaspora]
+        default: auto
+      weekly_rules:
+        description: 'Also manage the weekly Shabbat rule "shabbat-fridge weekly" (Friday ON, Saturday OFF). Leave off if you already have your own weekly rules.'
+        type: boolean
+        default: false
+      prune:
+        description: 'Also remove our rules for years no longer generated'
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: install-rules
+  cancel-in-progress: false
+jobs:
+  install:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Plan or install
+        env:
+          ST_TOKEN: ${{ secrets.SMARTTHINGS_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          YEARS: ${{ inputs.years }}
+          ENTRY: ${{ inputs.entry_minutes_before_sunset }}
+          EXIT: ${{ inputs.exit_minutes_after_sunset }}
+          REENTER: ${{ inputs.reenter_minutes_after_sunset }}
+          YOM_KIPPUR: ${{ inputs.include_yom_kippur }}
+          CALENDAR: ${{ inputs.calendar }}
+          WEEKLY_RULES: ${{ inputs.weekly_rules }}
+          PRUNE: ${{ inputs.prune }}
+        run: npx --no-install tsx scripts/install.ts
+
+  summary:
+    permissions:
+      contents: read
+    name: Run summary
+    if: always()
+    needs: [install]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Write run summary
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 scripts/ci/run_summary.py

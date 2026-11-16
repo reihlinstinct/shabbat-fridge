@@ -1,0 +1,104 @@
+# Research notes (2026-10-28)
+
+All links were read on 2026-10-28. "Community" means forum posts, not official guarantees.
+
+## SmartThings and the fridge capability
+
+- Capability `samsungce.sabbathMode` with commands `on` / `off` exists. Home Assistant added it as a switch
+  (status attribute). Example Rules JSON that commands it, plus a Sunset-based weekly rule, is in the community
+  thread: https://community.smartthings.com/t/sabbath-mode-to-be-added-to-routines-update/279681
+- A community developer reports the capability is not exposed to Routines at all, and that Samsung disables it
+  server-side on some models (Dacor), returning NOT_FOUND/422 although listed. Another reply confirms a
+  Samsung RF85R9141SR works through the API.
+  https://community.smartthings.com/t/free-integration-automate-shabbat-trying-to-unlock-samsung-fridge-sabbath-mode-via-api-looking-for-testers/310577
+- Samsung support: not all models have Sabbath mode; where present and SmartThings-enabled it is under
+  Refrigerator options > Sabbath mode. https://www.samsung.com/us/support/answer/ANS10006799/
+
+## Rules, schedules, hubs
+
+- Rules API: JSON actions (`if`, `sleep`, `command`, `every`) and operand `specific` with references such as
+  Noon and a minute offset. Rules run locally on a Hub when possible, else in the cloud. A rule installed by an
+  owner can only be edited by that owner. https://developer.smartthings.com/docs/automations/rules
+- Rules samples: https://github.com/SmartThingsDevelopers/Sample-RulesAPI/blob/master/README.md
+- The community example uses `daysOfWeek` + `Sunset` + offset. The Rules API also accepts `year`, `month`, `day`
+  in `specific` (seen in the user's own rule, 2026-10-28), so dated Sunset-relative actions work.
+
+## Auth and integration style
+
+- Personal access tokens issued since 30 Dec (2024) live 24 hours; use OAuth for anything long-lived.
+  https://community.smartthings.com/t/changes-to-personal-access-tokens-pat/292019/
+- OAuth access tokens last about 24h; refresh tokens are single-use, so store both new tokens after each refresh.
+  https://developer.smartthings.com/docs/service-integrations/token-management
+- Webhook events are signed (HTTP signature, digest, date).
+  https://developer.smartthings.com/docs/service-integrations/webhook-events
+- Architecture overview: https://developer.smartthings.com/docs/getting-started/architecture-of-smartthings
+- Public API reference: https://developer.smartthings.com/docs/api/public
+
+## What runs where (checked 2026-10-28)
+
+- Edge drivers are Lua drivers that run on a SmartThings Hub for Zigbee, Z-Wave, Matter and LAN devices:
+  https://support.smartthings.com/hc/en-us/articles/5685949017492-Edge-Drivers-for-New-Devices-FAQ
+  and "edge drivers run on the hub, so are not cloud to cloud": https://community.smartthings.com/t/general-question-about-c2c-devices/254030
+- Schema App (cloud connected devices) is an AWS Lambda or a webhook endpoint that the developer hosts:
+  https://developer.smartthings.com/docs/devices/cloud-connected/schema-app
+- Developer Workspace cloud-connected projects ended 2025-08-05 (moved to Developer Center):
+  https://developer.smartthings.com/docs/devices/cloud-connected/migrate
+- Groovy shutdown dates: https://support.smartthings.com/hc/en-us/articles/9339624925204-Platform-Transition-FAQ
+- Routines are IF/THEN with times, weekdays, device activity, presence; no calendar of holidays:
+  https://support.smartthings.com/hc/en-us/articles/360051931952-Routines-in-SmartThings
+- Prior art for Shabbat: a free Schema connector "Shabbat Switch" (Hebcal times, merges multi-day chagim with
+  Shabbat) and an open-source smartthings-shabbos-mode; both run on the author's host or the user's setup:
+  https://community.smartthings.com/t/free-integration-automate-shabbat-trying-to-unlock-samsung-fridge-sabbath-mode-via-api-looking-for-testers/310577
+  https://community.smartthings.com/t/ep-smartapp-replacement-for-shabbat-and-holiday-modes/255274
+- Rate limits page (no Rules guardrails found): https://developer.smartthings.com/docs/getting-started/rate-limits
+
+## History, auto-exit, renewal hosting (checked 2026-10-28)
+
+- SmartThings device history API (`/v1/history/devices`) returned door contact events only for this fridge,
+  about 7 days back. Sabbath mode status changes were not in it.
+- Samsung US support: "Sabbath mode stays active for 85 hours once it's enabled, even if there is a power outage"
+  (model-dependent): https://www.samsung.com/us/support/answer/ANS10006799/
+- GitHub Actions: scheduled events can be delayed at high load, `schedule` runs only from the default branch,
+  and a cron can stop if its actor account is suspended or deleted:
+  https://docs.github.com/en/actions/how-tos/troubleshoot-workflows
+- Secrets are encrypted with libsodium sealed boxes and can be written through the REST API:
+  https://docs.github.com/en/actions/concepts/security/secrets
+- The 60-day inactivity rule for public repos comes from a third-party article, not the GitHub pages above:
+  https://latchkey.dev/learn/github-actions/github-actions-schedule-disabled-60-days-inactivity
+
+## Free third-party options (checked 2026-10-28)
+
+- SmartThings CLI: browser login with Samsung account, or a PAT (24h); rules commands:
+  https://developer.smartthings.com/docs/sdks/cli and https://github.com/SmartThingsCommunity/smartthings-cli/blob/main/README.md
+  (example `smartthings rules:create -j -i file.json`: https://community.smartthings.com/t/how-to-write-api-rule/280637)
+- Home Assistant Jewish Calendar (Diaspora flag, `issur_melacha_in_effect`, candle lighting and havdalah sensors):
+  https://www.home-assistant.io/integrations/jewish_calendar
+- SmartThings and Home Assistant OAuth integration (no PAT): https://community.smartthings.com/t/new-integration-between-home-assistant-and-smartthings/296251
+- Home Assistant switch for `samsungce.sabbathMode` (commit in HA core, in the earlier search result):
+  https://git.2ari.ca/arian/home-assistant-core/commit/923300f4e7733a18100965407de1d7e96bf46381.diff
+- IFTTT free plan: https://help.ifttt.com/hc/en-us/articles/360052714673-Billing-FAQ and https://ifttt.com/plans
+- Make SmartThings app (PAT or OAuth credentials): https://apps.make.com/smartthings
+- Hubitat community driver for Samsung appliances via the SmartThings cloud:
+  https://community.hubitat.com/t/drivers-for-samsung-appliances-controlled-via-smartthings-cloud-api/94807
+
+## Jewish calendar and sunset
+
+- `@hebcal/core` computes holidays (Israel flag `il`) and zmanim offline for any latitude, longitude, time zone.
+  Its own defaults: candle lighting 18 min before sunset (40 in Jerusalem), Havdalah at 8.5 degrees. We override
+  with fixed minute offsets from sunset because that matches the fridge.
+  https://hebcal.github.io/api/core/functions/calendar.html
+- Hebcal web API location options (GeoNames id, lat/long+tz): https://www.hebcal.com/home/4912/specifying-a-location-for-jewish-calendar-apis
+  Useful later as an independent oracle in tests.
+
+## Hosting on free tiers
+
+- Cloudflare Workers Free: 100,000 requests/day, 10 ms CPU per invocation; Cron Triggers fit a 5-minute loop.
+  https://developers.cloudflare.com/workers/platform/pricing/ (check KV/Durable Object free limits before building)
+- GitHub Actions `schedule`: default branch only, delayed not exact; public repos' schedules are disabled after
+  60 days without activity. https://latchkey.dev/learn/github-actions/github-actions-schedule-disabled-60-days-inactivity
+
+## Not yet verified
+
+- Whether this fridge accepts `on`/`off` through the API and still accepts `off` while the mode is on.
+- Whether the built-in Shabbat timer can be disabled.
+- Exact OAuth app creation flow today for a personal account.

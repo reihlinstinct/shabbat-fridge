@@ -1,0 +1,75 @@
+{
+  "mappings": [
+    {
+      "pattern": "scripts/generate.ts",
+      "checks": [
+        "generate",
+        "test"
+      ]
+    },
+    {
+      "pattern": "scripts/install.ts",
+      "checks": [
+        "install",
+        "test"
+      ]
+    },
+    {
+      "pattern": "scripts/collect.ts",
+      "checks": [
+        "collect",
+        "test"
+      ]
+    },
+    {
+      "pattern": "scripts/collect-encrypted.ts",
+      "checks": [
+        "collect",
+        "test"
+      ]
+    },
+    {
+      "pattern": "scripts/collector-rotate.ts",
+      "checks": [
+        "collect",
+        "test"
+      ]
+    },
+    {
+      "pattern": "scripts/*.ts",
+      "checks": [
+        "test"
+      ]
+    },
+    {
+      "pattern": "test/**",
+      "checks": [
+        "test"
+      ]
+    },
+    {
+      "pattern": "package.json",
+      "checks": [
+        "test"
+      ]
+    },
+    {
+      "pattern": "package-lock.json",
+      "checks": [
+        "test"
+      ]
+    },
+    {
+      "pattern": "tsconfig.json",
+      "checks": [
+        "test"
+      ]
+    },
+    {
+      "pattern": "config/**",
+      "checks": [
+        "collect"
+      ]
+    }
+  ]
+}

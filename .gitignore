@@ -1,0 +1,7 @@
+node_modules
+dist
+.env
+.dev.vars
+
+# Synthetic accessibility preview manifest
+.a11y-routes.json
