@@ -17,7 +17,7 @@ jobs:
         with:
           persist-credentials: false
       - id: guard
-        uses: reihlinstinct/repo-checks/actions/privacy@5d4442070254cdc98f36a1cdbe8137b8cb014d30 # v1.0.0
+        uses: reihlinstinct/repo-checks/actions/privacy@c2f8c84fbe0f336bf7cedae46547cc4645e807d5 # v1.1.1
         with:
           checkout-root: ${{ github.workspace }}
         continue-on-error: true
